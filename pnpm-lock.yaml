@@ -7,6 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      better-sqlite3:
+        specifier: ^12.9.0
+        version: 12.9.0
+      epub2:
+        specifier: ^3.0.2
+        version: 3.0.2(ts-toolbelt@9.6.0)
     devDependencies:
       '@eslint/compat':
         specifier: ^2.0.4
@@ -32,12 +39,6 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.12.2
-      better-sqlite3:
-        specifier: ^12.9.0
-        version: 12.9.0
-      epub2:
-        specifier: ^3.0.2
-        version: 3.0.2(ts-toolbelt@9.6.0)
       eslint:
         specifier: ^10.2.0
         version: 10.2.1
