@@ -35,6 +35,16 @@ export async function getWork(id: string, fetch: Fetch): Promise<WorkDetail> {
 	return res.json();
 }
 
+export async function getChapterHtml(
+	workId: string,
+	n: number | string,
+	fetch: Fetch
+): Promise<string> {
+	const res = await fetch(`/api/works/${workId}/ch/${n}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.text();
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {
