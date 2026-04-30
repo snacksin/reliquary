@@ -25,6 +25,16 @@ export async function uploadEpub(file: File, fetch: Fetch): Promise<{ work_id: s
 	return res.json();
 }
 
+export type WorkDetail = Work & {
+	chapters: { number: number; title: string | null }[];
+};
+
+export async function getWork(id: string, fetch: Fetch): Promise<WorkDetail> {
+	const res = await fetch(`/api/works/${id}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {

@@ -1,0 +1,80 @@
+<script lang="ts">
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
+</script>
+
+<svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
+
+<main>
+	<p class="back"><a href="/">← Library</a></p>
+	<h1>{data.work.title}</h1>
+	<p class="author">by {data.work.author}</p>
+	{#if data.work.summary}
+		<div class="summary">{@html data.work.summary}</div>
+	{/if}
+	<h2>Chapters</h2>
+	<ol class="chapters">
+		{#each data.work.chapters as ch (ch.number)}
+			<li>
+				<a href="/works/{data.work.id}/ch/{ch.number}">
+					{#if ch.title}{ch.title}{:else}<em>untitled</em>{/if}
+				</a>
+			</li>
+		{/each}
+	</ol>
+</main>
+
+<style>
+	main {
+		max-width: 720px;
+		margin: 2rem auto;
+		padding: 0 1rem;
+		font-family: system-ui, sans-serif;
+	}
+	.back {
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+	}
+	.back a {
+		color: #555;
+		text-decoration: none;
+	}
+	.back a:hover {
+		text-decoration: underline;
+	}
+	h1 {
+		font-size: 1.6rem;
+		margin: 0 0 0.25rem;
+	}
+	.author {
+		color: #666;
+		margin-top: 0;
+	}
+	.summary {
+		background: #f7f7f7;
+		padding: 0.75rem 1rem;
+		border-radius: 4px;
+		margin: 1rem 0;
+	}
+	.summary :global(p) {
+		margin: 0.5rem 0;
+	}
+	h2 {
+		font-size: 1.1rem;
+		margin-top: 2rem;
+	}
+	ol.chapters {
+		padding-left: 1.5rem;
+	}
+	ol.chapters li {
+		padding: 0.25rem 0;
+	}
+	ol.chapters a {
+		color: inherit;
+		text-decoration: none;
+	}
+	ol.chapters a:hover {
+		text-decoration: underline;
+	}
+</style>
