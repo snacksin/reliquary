@@ -12,6 +12,9 @@ node_modules
 data/
 *.db
 
+# Claude Code local config
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
