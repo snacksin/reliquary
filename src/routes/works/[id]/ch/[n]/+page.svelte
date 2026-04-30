@@ -1,7 +1,28 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	onMount(() => {
+		const key = `scroll:${page.params.id}:${page.params.n}`;
+		const saved = localStorage.getItem(key);
+		if (saved !== null) {
+			const y = Number(saved);
+			if (Number.isFinite(y)) window.scrollTo(0, y);
+		}
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const onScroll = () => {
+			clearTimeout(timer);
+			timer = setTimeout(() => localStorage.setItem(key, String(window.scrollY)), 500);
+		};
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('scroll', onScroll);
+		};
+	});
 </script>
 
 <svelte:head>
