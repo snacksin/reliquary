@@ -76,4 +76,11 @@
 		line-height: 1.6;
 		color: #3b2328;
 	}
+	/* Constrain embedded images (header banners, chapter art) to the
+	   reading column width so wide ones don't force horizontal page
+	   scroll. height: auto preserves aspect ratio. */
+	.reader :global(img) {
+		max-width: 100%;
+		height: auto;
+	}
 </style>
