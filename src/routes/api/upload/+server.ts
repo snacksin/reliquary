@@ -39,20 +39,31 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const buffer = Buffer.from(await file.arrayBuffer());
 
+	// Generate work_id up front so the parser can bake it into the
+	// rewritten image-src URLs in chapter HTML.
+	const work_id = randomUUID();
+
 	let parsed;
 	try {
-		parsed = await parseEpub(buffer);
+		parsed = await parseEpub(buffer, work_id);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : 'unknown error';
 		throw error(400, `invalid EPUB: ${msg}`);
 	}
 
-	const work_id = randomUUID();
 	const workDir = join('data', 'works', work_id);
 	mkdirSync(workDir, { recursive: true });
 
 	for (const ch of parsed.chapters) {
 		writeFileSync(join(workDir, chapterFilename(ch)), ch.html, 'utf8');
+	}
+
+	if (parsed.images.length > 0) {
+		const imagesDir = join(workDir, 'images');
+		mkdirSync(imagesDir, { recursive: true });
+		for (const img of parsed.images) {
+			writeFileSync(join(imagesDir, img.filename), img.buffer);
+		}
 	}
 
 	const db = getDb();
