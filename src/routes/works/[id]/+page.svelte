@@ -2,6 +2,13 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// Show only real chapters in the main list. Step 4 will add dedicated
+	// links for the preface ("Tags & metadata") and afterword ("End notes")
+	// per M1.md §"New / changed UI surfaces". Until then, hiding wrappers
+	// here keeps the list clean and avoids broken `/ch/-2`-style links
+	// from the new fixed-negative wrapper numbering.
+	const realChapters = $derived(data.work.chapters.filter((c) => c.kind === 'chapter'));
 </script>
 
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
@@ -15,7 +22,7 @@
 	{/if}
 	<h2>Chapters</h2>
 	<ol class="chapters">
-		{#each data.work.chapters as ch (ch.number)}
+		{#each realChapters as ch (ch.number)}
 			<li>
 				<a href="/works/{data.work.id}/ch/{ch.number}">
 					{#if ch.title}{ch.title}{:else}<em>untitled</em>{/if}
