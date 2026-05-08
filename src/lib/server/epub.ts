@@ -13,13 +13,30 @@ export type ParsedChapter = {
 	html: string;
 };
 
+export type ParsedImage = {
+	filename: string;
+	buffer: Buffer;
+	mediaType: string;
+};
+
 export type ParsedEpub = {
 	title: string;
 	author: string;
 	summary: string | null;
 	chapters: ParsedChapter[];
 	chapterCount: number;
+	images: ParsedImage[];
 };
+
+/**
+ * Sentinel imagewebroot we hand to epub2 at parse time. epub2 rewrites
+ * `<img src="...">` paths in chapter HTML using this prefix; we
+ * post-process the resulting URLs to point at our serving endpoint.
+ * Using a sentinel (rather than the lib's default `/images/`) means we
+ * don't accidentally rewrite any unrelated `/images/` references that
+ * might appear in the original EPUB content.
+ */
+const IMG_SENTINEL = '/__reliquary_img__/';
 
 /**
  * Wrapper rows still need a `number` (NOT NULL UNIQUE). Real chapters
@@ -97,12 +114,38 @@ function classify(
 	return 'chapter';
 }
 
-export async function parseEpub(buffer: Buffer): Promise<ParsedEpub> {
+/**
+ * Rewrite the sentinel image-src prefix epub2 emitted in chapter HTML
+ * to point at this server's images endpoint for the given work.
+ *
+ *   <img src="/__reliquary_img__/foo.jpg">
+ *     → <img src="/api/works/<workId>/images/foo.jpg">
+ *
+ * Anything after the sentinel that contains slashes (epub2 sometimes
+ * emits `<sentinel>/manifest_id/zip/path.jpg`) is collapsed to its
+ * basename so the URL matches what we wrote to disk
+ * (data/works/<id>/images/<basename>).
+ */
+function rewriteImageSrcs(html: string, workId: string): string {
+	const re = new RegExp(
+		`(src|href)=(["'])${IMG_SENTINEL.replace(/\//g, '\\/')}([^"']+)`,
+		'g'
+	);
+	return html.replace(re, (_match, attr, quote, path) => {
+		const filename = path.split('/').pop() || path;
+		return `${attr}=${quote}/api/works/${workId}/images/${filename}`;
+	});
+}
+
+export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedEpub> {
 	const tmpPath = join(tmpdir(), `reliquary-epub-${randomUUID()}.epub`);
 	await writeFile(tmpPath, buffer);
 
 	try {
-		const book = await EPub.createAsync(tmpPath);
+		// Pass our sentinel as imagewebroot so epub2 rewrites all `<img>`
+		// paths in chapter HTML to use it. We post-process to the real
+		// serving URL after fetching each chapter.
+		const book = await EPub.createAsync(tmpPath, IMG_SENTINEL);
 
 		const title = book.metadata.title?.trim() || 'Untitled';
 		const author = book.metadata.creator?.trim() || 'Unknown';
@@ -135,7 +178,8 @@ export async function parseEpub(buffer: Buffer): Promise<ParsedEpub> {
 			const f = flow[i];
 			if (!f.id) continue;
 			const kind = kinds[i];
-			const html = await book.getChapterAsync(f.id);
+			const rawHtml = await book.getChapterAsync(f.id);
+			const html = rewriteImageSrcs(rawHtml, workId);
 
 			let number: number;
 			if (kind === 'chapter') {
@@ -158,7 +202,29 @@ export async function parseEpub(buffer: Buffer): Promise<ParsedEpub> {
 			throw new Error('EPUB has no chapters');
 		}
 
-		return { title, author, summary, chapters, chapterCount };
+		// Image extraction. listImage() returns image manifest entries;
+		// getImageAsync(id) returns [Buffer, mediaType]. We collapse
+		// each href to its basename so the on-disk filename matches the
+		// URL we baked into the chapter HTML above.
+		type ImageManifest = { id?: string; href?: string };
+		const imageEntries = (book.listImage?.() ?? []) as ImageManifest[];
+		const images: ParsedImage[] = [];
+		const seen = new Set<string>();
+		for (const entry of imageEntries) {
+			if (!entry.id || !entry.href) continue;
+			const filename = (entry.href.split('/').pop() || '').trim();
+			if (!filename || seen.has(filename)) continue;
+			seen.add(filename);
+			try {
+				const [buf, mediaType] = await book.getImageAsync(entry.id);
+				images.push({ filename, buffer: buf, mediaType });
+			} catch {
+				// Some EPUBs reference images that aren't actually packaged.
+				// Skip rather than fail the whole upload.
+			}
+		}
+
+		return { title, author, summary, chapters, chapterCount, images };
 	} finally {
 		await unlink(tmpPath).catch(() => {});
 	}
