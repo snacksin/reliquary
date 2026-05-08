@@ -47,6 +47,18 @@ export async function getChapterHtml(
 	return res.text();
 }
 
+export async function getPrefaceHtml(workId: string, fetch: Fetch): Promise<string> {
+	const res = await fetch(`/api/works/${workId}/preface`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.text();
+}
+
+export async function getAfterwordHtml(workId: string, fetch: Fetch): Promise<string> {
+	const res = await fetch(`/api/works/${workId}/afterword`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.text();
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {

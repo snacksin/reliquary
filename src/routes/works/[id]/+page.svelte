@@ -3,12 +3,12 @@
 
 	let { data }: PageProps = $props();
 
-	// Show only real chapters in the main list. Step 4 will add dedicated
-	// links for the preface ("Tags & metadata") and afterword ("End notes")
-	// per M1.md §"New / changed UI surfaces". Until then, hiding wrappers
-	// here keeps the list clean and avoids broken `/ch/-2`-style links
-	// from the new fixed-negative wrapper numbering.
+	// The numbered chapter list shows only real chapters; the preface
+	// ("Tags & metadata") and afterword ("End notes") are surfaced as
+	// dedicated links above and below the list.
 	const realChapters = $derived(data.work.chapters.filter((c) => c.kind === 'chapter'));
+	const hasPreface = $derived(data.work.chapters.some((c) => c.kind === 'preface'));
+	const hasAfterword = $derived(data.work.chapters.some((c) => c.kind === 'afterword'));
 </script>
 
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
@@ -20,6 +20,11 @@
 	{#if data.work.summary}
 		<div class="summary">{@html data.work.summary}</div>
 	{/if}
+	{#if hasPreface}
+		<p class="wrapper-link">
+			<a href="/works/{data.work.id}/preface">Tags &amp; metadata</a>
+		</p>
+	{/if}
 	<h2>Chapters</h2>
 	<ol class="chapters">
 		{#each realChapters as ch (ch.number)}
@@ -30,6 +35,11 @@
 			</li>
 		{/each}
 	</ol>
+	{#if hasAfterword}
+		<p class="wrapper-link">
+			<a href="/works/{data.work.id}/afterword">End notes</a>
+		</p>
+	{/if}
 </main>
 
 <style>
@@ -82,6 +92,17 @@
 		text-decoration: none;
 	}
 	ol.chapters a:hover {
+		text-decoration: underline;
+	}
+	.wrapper-link {
+		font-size: 0.9rem;
+		margin: 0.5rem 0;
+	}
+	.wrapper-link a {
+		color: #555;
+		text-decoration: none;
+	}
+	.wrapper-link a:hover {
 		text-decoration: underline;
 	}
 </style>
