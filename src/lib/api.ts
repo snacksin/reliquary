@@ -25,8 +25,10 @@ export async function uploadEpub(file: File, fetch: Fetch): Promise<{ work_id: s
 	return res.json();
 }
 
+export type ChapterKind = 'preface' | 'summary' | 'chapter' | 'afterword';
+
 export type WorkDetail = Work & {
-	chapters: { number: number; title: string | null }[];
+	chapters: { number: number; title: string | null; kind: ChapterKind }[];
 };
 
 export async function getWork(id: string, fetch: Fetch): Promise<WorkDetail> {

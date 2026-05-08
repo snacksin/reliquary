@@ -4,7 +4,20 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from '$lib/server/db';
-import { parseEpub } from '$lib/server/epub';
+import { parseEpub, type ParsedChapter } from '$lib/server/epub';
+
+/**
+ * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
+ * (matching the existing /ch/[n] route); wrappers use kind-based
+ * names (`preface.html`, `summary.html`, `afterword.html`) so the
+ * `data/works/{id}/` directory stays human-readable instead of
+ * littering it with `ch--2.html`-style entries from the negative
+ * wrapper numbers.
+ */
+function chapterFilename(ch: ParsedChapter): string {
+	if (ch.kind === 'chapter') return `ch-${ch.number}.html`;
+	return `${ch.kind}.html`;
+}
 
 export const POST: RequestHandler = async ({ request }) => {
 	let formData: FormData;
@@ -39,7 +52,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	mkdirSync(workDir, { recursive: true });
 
 	for (const ch of parsed.chapters) {
-		writeFileSync(join(workDir, `ch-${ch.number}.html`), ch.html, 'utf8');
+		writeFileSync(join(workDir, chapterFilename(ch)), ch.html, 'utf8');
 	}
 
 	const db = getDb();
@@ -49,8 +62,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		 VALUES (?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
-		`INSERT INTO chapters (id, work_id, number, title, content_path)
-		 VALUES (?, ?, ?, ?, ?)`
+		`INSERT INTO chapters (id, work_id, number, title, content_path, kind)
+		 VALUES (?, ?, ?, ?, ?, ?)`
 	);
 
 	db.transaction(() => {
@@ -59,7 +72,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			parsed.title,
 			parsed.author,
 			parsed.summary,
-			parsed.chapters.length,
+			parsed.chapterCount,
 			null
 		);
 		for (const ch of parsed.chapters) {
@@ -68,7 +81,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				work_id,
 				ch.number,
 				ch.title,
-				join(workDir, `ch-${ch.number}.html`)
+				join(workDir, chapterFilename(ch)),
+				ch.kind
 			);
 		}
 	})();
