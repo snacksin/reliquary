@@ -1,6 +1,12 @@
 export type LastRead = {
 	chapter: number;
 	scroll_y: number;
+	/**
+	 * ISO 8601 timestamp of the last write to `reading_progress.updated_at`
+	 * for this work — used by the library to sort the Continue Reading
+	 * carousel by reading recency, not by upload order.
+	 */
+	updated_at: string;
 };
 
 export type Work = {

@@ -9,7 +9,8 @@ export const GET: RequestHandler = ({ params }) => {
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
 			   w.favorited_at,
-			   rp.last_chapter, rp.last_scroll_y
+			   rp.last_chapter, rp.last_scroll_y,
+			   rp.updated_at AS last_updated_at
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 			 WHERE w.id = ?`
@@ -25,6 +26,7 @@ export const GET: RequestHandler = ({ params }) => {
 				favorited_at: string | null;
 				last_chapter: number | null;
 				last_scroll_y: number | null;
+				last_updated_at: string | null;
 		  }
 		| undefined;
 
@@ -40,8 +42,12 @@ export const GET: RequestHandler = ({ params }) => {
 		is_favorite: row.favorited_at !== null,
 		favorited_at: row.favorited_at,
 		last_read:
-			row.last_chapter !== null && row.last_scroll_y !== null
-				? { chapter: row.last_chapter, scroll_y: row.last_scroll_y }
+			row.last_chapter !== null && row.last_scroll_y !== null && row.last_updated_at !== null
+				? {
+						chapter: row.last_chapter,
+						scroll_y: row.last_scroll_y,
+						updated_at: row.last_updated_at
+					}
 				: null
 	};
 

@@ -8,7 +8,19 @@
 	let uploading = $state(false);
 	let errorMessage: string | null = $state(null);
 
-	const continueReading = $derived(data.works.filter((w) => w.last_read));
+	// Continue Reading: most-recently-read first. /api/works orders by
+	// upload date (ingested_at DESC), which would surface freshly
+	// uploaded fics regardless of when their reading happened — wrong
+	// for a "Continue Reading" carousel. Re-sort the read subset by
+	// last_read.updated_at DESC, symmetric to how Favorites sorts by
+	// favorited_at DESC.
+	const continueReading = $derived(
+		data.works
+			.filter((w) => w.last_read)
+			.toSorted((a, b) =>
+				(b.last_read?.updated_at ?? '').localeCompare(a.last_read?.updated_at ?? '')
+			)
+	);
 	// Favorites carousel: most-recently-favorited first. /api/works
 	// orders by ingested_at; we re-sort the favorited subset here.
 	const favorites = $derived(
