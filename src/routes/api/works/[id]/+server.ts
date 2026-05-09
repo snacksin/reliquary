@@ -8,6 +8,7 @@ export const GET: RequestHandler = ({ params }) => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
+			   w.favorited_at,
 			   rp.last_chapter, rp.last_scroll_y
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
@@ -21,6 +22,7 @@ export const GET: RequestHandler = ({ params }) => {
 				summary: string | null;
 				chapter_count: number;
 				word_count: number | null;
+				favorited_at: string | null;
 				last_chapter: number | null;
 				last_scroll_y: number | null;
 		  }
@@ -35,6 +37,8 @@ export const GET: RequestHandler = ({ params }) => {
 		summary: row.summary,
 		chapter_count: row.chapter_count,
 		word_count: row.word_count,
+		is_favorite: row.favorited_at !== null,
+		favorited_at: row.favorited_at,
 		last_read:
 			row.last_chapter !== null && row.last_scroll_y !== null
 				? { chapter: row.last_chapter, scroll_y: row.last_scroll_y }

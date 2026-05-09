@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
+	import { setFavorite, unsetFavorite } from '$lib/api';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -9,14 +11,56 @@
 	const realChapters = $derived(data.work.chapters.filter((c) => c.kind === 'chapter'));
 	const hasPreface = $derived(data.work.chapters.some((c) => c.kind === 'preface'));
 	const hasAfterword = $derived(data.work.chapters.some((c) => c.kind === 'afterword'));
+
+	// Optimistic local override so the heart toggle feels instantaneous.
+	// Set on click, cleared once invalidateAll re-fetches (fresh
+	// data.work.is_favorite then takes over). Initial null = "no
+	// override, use server data".
+	let pendingFavorite: boolean | null = $state(null);
+	const isFavorite = $derived(pendingFavorite ?? data.work.is_favorite);
+	let favoriteError: string | null = $state(null);
+
+	async function toggleFavorite() {
+		const next = !isFavorite;
+		pendingFavorite = next;
+		favoriteError = null;
+		try {
+			if (next) {
+				await setFavorite(data.work.id, fetch);
+			} else {
+				await unsetFavorite(data.work.id, fetch);
+			}
+			await invalidateAll();
+			pendingFavorite = null;
+		} catch (e) {
+			pendingFavorite = !next; // revert
+			favoriteError = e instanceof Error ? e.message : 'Favorite toggle failed';
+			// snap optimistic state back so the next render reflects reality
+			pendingFavorite = null;
+		}
+	}
 </script>
 
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
 
 <main>
 	<p class="back"><a href="/">← Library</a></p>
-	<h1>{data.work.title}</h1>
+	<div class="title-row">
+		<h1>{data.work.title}</h1>
+		<button
+			class="heart"
+			class:filled={isFavorite}
+			onclick={toggleFavorite}
+			aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+			aria-pressed={isFavorite}
+		>
+			{isFavorite ? '♥' : '♡'}
+		</button>
+	</div>
 	<p class="author">by {data.work.author}</p>
+	{#if favoriteError}
+		<p class="error">{favoriteError}</p>
+	{/if}
 	{#if data.work.last_read}
 		<p class="continue">
 			<a
@@ -70,13 +114,53 @@
 	.back a:hover {
 		text-decoration: underline;
 	}
+	.title-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
 	h1 {
 		font-size: 1.6rem;
 		margin: 0 0 0.25rem;
+		flex: 1 1 auto;
+	}
+	.heart {
+		flex: 0 0 auto;
+		background: none;
+		border: 1px solid #ddd;
+		border-radius: 50%;
+		width: 38px;
+		height: 38px;
+		font-size: 22px;
+		line-height: 1;
+		color: #999;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		transition:
+			color 80ms ease,
+			border-color 80ms ease,
+			background 80ms ease;
+	}
+	.heart:hover {
+		border-color: #c43c4f;
+		color: #c43c4f;
+	}
+	.heart.filled {
+		color: #c43c4f;
+		border-color: #c43c4f;
+		background: #fdecef;
 	}
 	.author {
 		color: #666;
 		margin-top: 0;
+	}
+	.error {
+		color: #b00;
+		font-size: 0.9rem;
+		margin: 0.25rem 0 0;
 	}
 	.continue {
 		margin: 1rem 0 0;
