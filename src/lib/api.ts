@@ -11,6 +11,13 @@ export type Work = {
 	chapter_count: number;
 	word_count: number | null;
 	last_read: LastRead | null;
+	is_favorite: boolean;
+	/**
+	 * ISO 8601 timestamp set by POST /api/works/[id]/favorite. Used
+	 * client-side to sort the Favorites carousel most-recent-first.
+	 * Null when `is_favorite` is false.
+	 */
+	favorited_at: string | null;
 };
 
 type Fetch = typeof fetch;
@@ -81,6 +88,16 @@ export async function saveProgress(
 
 export async function removeProgress(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/progress`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function setFavorite(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/favorite`, { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function unsetFavorite(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/favorite`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(await extractError(res));
 }
 

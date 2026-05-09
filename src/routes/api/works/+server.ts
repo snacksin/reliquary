@@ -9,6 +9,7 @@ type Row = {
 	summary: string | null;
 	chapter_count: number;
 	word_count: number | null;
+	favorited_at: string | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
 };
@@ -19,6 +20,7 @@ export const GET: RequestHandler = () => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
+			   w.favorited_at,
 			   rp.last_chapter, rp.last_scroll_y
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
@@ -34,6 +36,8 @@ export const GET: RequestHandler = () => {
 			summary: r.summary,
 			chapter_count: r.chapter_count,
 			word_count: r.word_count,
+			is_favorite: r.favorited_at !== null,
+			favorited_at: r.favorited_at,
 			last_read:
 				r.last_chapter !== null && r.last_scroll_y !== null
 					? { chapter: r.last_chapter, scroll_y: r.last_scroll_y }

@@ -9,6 +9,13 @@
 	let errorMessage: string | null = $state(null);
 
 	const continueReading = $derived(data.works.filter((w) => w.last_read));
+	// Favorites carousel: most-recently-favorited first. /api/works
+	// orders by ingested_at; we re-sort the favorited subset here.
+	const favorites = $derived(
+		data.works
+			.filter((w) => w.is_favorite && w.favorited_at)
+			.toSorted((a, b) => (b.favorited_at ?? '').localeCompare(a.favorited_at ?? ''))
+	);
 
 	function progressPercent(w: Work): number {
 		if (!w.last_read || w.chapter_count <= 0) return 0;
@@ -106,16 +113,39 @@
 		</section>
 	{/if}
 
+	{#if favorites.length > 0}
+		<section class="favorites">
+			<h2>Favorites</h2>
+			<div class="carousel">
+				{#each favorites as work (work.id)}
+					<article class="cr-card">
+						<a href="/works/{work.id}" class="cr-card-link">
+							<div class="cover-slot" aria-hidden="true"></div>
+							<strong>{work.title}</strong>
+							<span class="cr-meta">by {work.author}</span>
+						</a>
+					</article>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
 	{#if data.works.length === 0}
 		<p class="empty">No works yet — upload an EPUB to get started.</p>
 	{:else}
 		<section class="full-library">
-			{#if continueReading.length > 0}<h2>Library</h2>{/if}
+			{#if continueReading.length > 0 || favorites.length > 0}<h2>Library</h2>{/if}
 			<ul class="works">
 				{#each data.works as work (work.id)}
 					<li>
 						<a href="/works/{work.id}">
-							<strong>{work.title}</strong>
+							<strong>
+								{work.title}
+								{#if work.is_favorite}<span
+										class="fav-indicator"
+										aria-label="Favorited">♥</span
+									>{/if}
+							</strong>
 							<span class="meta"
 								>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1
 									? ''
@@ -261,5 +291,10 @@
 		color: #666;
 		font-size: 0.9rem;
 		margin-top: 0.15rem;
+	}
+	.fav-indicator {
+		color: #c43c4f;
+		margin-left: 0.4rem;
+		font-size: 0.85em;
 	}
 </style>
