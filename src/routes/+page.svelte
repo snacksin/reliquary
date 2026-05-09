@@ -16,16 +16,23 @@
 	}
 
 	/**
-	 * Where the work's title link goes:
-	 *  - has saved progress → reader at last-read chapter, with
-	 *    `?continue=1` so the reader restores scroll instead of
-	 *    starting at the top
-	 *  - no progress → detail page (existing POC behavior)
+	 * One-shots (chapter_count === 1) would always show "100% through"
+	 * the moment the user clicks them, which is misleading. Use a
+	 * neutral progress label for them instead.
 	 */
-	function workHref(w: Work): string {
-		return w.last_read
-			? `/works/${w.id}/ch/${w.last_read.chapter}?continue=1`
-			: `/works/${w.id}`;
+	function progressLabel(w: Work): string {
+		if (!w.last_read) return '';
+		if (w.chapter_count === 1) return 'In progress';
+		return `Chapter ${w.last_read.chapter} · ${progressPercent(w)}% through`;
+	}
+
+	/**
+	 * Continue Reading carousel: always resume — the carousel only
+	 * exists for works with `last_read`, and the user clicked the CR
+	 * card *because* they want to pick up where they left off.
+	 */
+	function continueHref(w: Work): string {
+		return `/works/${w.id}/ch/${w.last_read!.chapter}?continue=1`;
 	}
 
 	async function handleFileChange(e: Event) {
@@ -81,12 +88,10 @@
 			<div class="carousel">
 				{#each continueReading as work (work.id)}
 					<article class="cr-card">
-						<a href={workHref(work)} class="cr-card-link">
+						<a href={continueHref(work)} class="cr-card-link">
 							<div class="cover-slot" aria-hidden="true"></div>
 							<strong>{work.title}</strong>
-							<span class="cr-meta"
-								>Chapter {work.last_read!.chapter} · {progressPercent(work)}% through</span
-							>
+							<span class="cr-meta">{progressLabel(work)}</span>
 						</a>
 						<button
 							class="remove"
@@ -109,7 +114,7 @@
 			<ul class="works">
 				{#each data.works as work (work.id)}
 					<li>
-						<a href={workHref(work)}>
+						<a href="/works/{work.id}">
 							<strong>{work.title}</strong>
 							<span class="meta"
 								>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1

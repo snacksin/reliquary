@@ -17,6 +17,16 @@
 	<p class="back"><a href="/">← Library</a></p>
 	<h1>{data.work.title}</h1>
 	<p class="author">by {data.work.author}</p>
+	{#if data.work.last_read}
+		<p class="continue">
+			<a
+				class="continue-button"
+				href="/works/{data.work.id}/ch/{data.work.last_read.chapter}?continue=1"
+			>
+				Continue from Chapter {data.work.last_read.chapter}
+			</a>
+		</p>
+	{/if}
 	{#if data.work.summary}
 		<div class="summary">{@html data.work.summary}</div>
 	{/if}
@@ -67,6 +77,22 @@
 	.author {
 		color: #666;
 		margin-top: 0;
+	}
+	.continue {
+		margin: 1rem 0 0;
+	}
+	.continue-button {
+		display: inline-block;
+		padding: 0.5rem 0.9rem;
+		background: #3b2328;
+		color: #f6f2e4;
+		border-radius: 4px;
+		text-decoration: none;
+		font-size: 0.95rem;
+		font-weight: 500;
+	}
+	.continue-button:hover {
+		background: #5a3640;
 	}
 	.summary {
 		background: #f7f7f7;
