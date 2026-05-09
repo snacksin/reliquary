@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SettingsPanel from '$lib/SettingsPanel.svelte';
+
 	let { html }: { html: string } = $props();
 </script>
 
@@ -6,10 +8,12 @@
 	<style>
 		body {
 			margin: 0;
-			background: #f6f2e4;
+			background: var(--reader-bg);
 		}
 	</style>
 </svelte:head>
+
+<SettingsPanel />
 
 <article class="reader">
 	{@html html}
@@ -23,7 +27,7 @@
 		font-family: Georgia, serif;
 		font-size: 18px;
 		line-height: 1.6;
-		color: #3b2328;
+		color: var(--reader-fg);
 	}
 	/* Constrain embedded images (header banners, chapter art) to the
 	   reading column width so wide ones don't force horizontal page

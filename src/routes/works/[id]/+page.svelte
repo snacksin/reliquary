@@ -165,18 +165,22 @@
 	.continue {
 		margin: 1rem 0 0;
 	}
+	/* Inverted theme colors — `--reader-fg` for the bg + `--reader-bg`
+	   for the text gives a high-contrast button regardless of which
+	   reader theme is active. The detail page itself stays neutral
+	   (system fonts / colors); only this CTA reflects the theme. */
 	.continue-button {
 		display: inline-block;
 		padding: 0.5rem 0.9rem;
-		background: #3b2328;
-		color: #f6f2e4;
+		background: var(--reader-fg);
+		color: var(--reader-bg);
 		border-radius: 4px;
 		text-decoration: none;
 		font-size: 0.95rem;
 		font-weight: 500;
 	}
 	.continue-button:hover {
-		background: #5a3640;
+		background: var(--reader-accent);
 	}
 	.summary {
 		background: #f7f7f7;
