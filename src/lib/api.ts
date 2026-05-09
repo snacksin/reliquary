@@ -1,3 +1,8 @@
+export type LastRead = {
+	chapter: number;
+	scroll_y: number;
+};
+
 export type Work = {
 	id: string;
 	title: string;
@@ -5,6 +10,7 @@ export type Work = {
 	summary: string | null;
 	chapter_count: number;
 	word_count: number | null;
+	last_read: LastRead | null;
 };
 
 type Fetch = typeof fetch;
@@ -57,6 +63,25 @@ export async function getAfterwordHtml(workId: string, fetch: Fetch): Promise<st
 	const res = await fetch(`/api/works/${workId}/afterword`);
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.text();
+}
+
+export async function saveProgress(
+	workId: string,
+	chapter: number,
+	scroll_y: number,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/progress`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ chapter, scroll_y: Math.round(scroll_y) })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function removeProgress(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/progress`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 async function extractError(res: Response): Promise<string> {
