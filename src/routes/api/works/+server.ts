@@ -12,6 +12,7 @@ type Row = {
 	favorited_at: string | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
+	last_updated_at: string | null;
 };
 
 export const GET: RequestHandler = () => {
@@ -21,7 +22,8 @@ export const GET: RequestHandler = () => {
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
 			   w.favorited_at,
-			   rp.last_chapter, rp.last_scroll_y
+			   rp.last_chapter, rp.last_scroll_y,
+			   rp.updated_at AS last_updated_at
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 			 ORDER BY w.ingested_at DESC`
@@ -38,9 +40,17 @@ export const GET: RequestHandler = () => {
 			word_count: r.word_count,
 			is_favorite: r.favorited_at !== null,
 			favorited_at: r.favorited_at,
+			// `updated_at` ships with last_read so the Continue Reading
+			// carousel can sort by reading recency (not upload order)
+			// without an extra round-trip — symmetric to how Favorites
+			// uses works.favorited_at.
 			last_read:
-				r.last_chapter !== null && r.last_scroll_y !== null
-					? { chapter: r.last_chapter, scroll_y: r.last_scroll_y }
+				r.last_chapter !== null && r.last_scroll_y !== null && r.last_updated_at !== null
+					? {
+							chapter: r.last_chapter,
+							scroll_y: r.last_scroll_y,
+							updated_at: r.last_updated_at
+						}
 					: null
 		}))
 	);
