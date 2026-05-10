@@ -1,11 +1,28 @@
 <script lang="ts">
 	import { themeStore, THEMES, type Theme } from '$lib/theme.svelte';
+	import {
+		fontPref,
+		FONT_TOKENS,
+		FONT_LABELS,
+		type FontToken,
+		sizePref,
+		SIZE_TOKENS,
+		SIZE_LABELS,
+		type SizeToken,
+		lineHeightPref,
+		LINE_HEIGHT_TOKENS,
+		LINE_HEIGHT_LABELS,
+		type LineHeightToken,
+		widthPref,
+		WIDTH_TOKENS,
+		WIDTH_LABELS,
+		type WidthToken
+	} from '$lib/prefs.svelte';
 
 	/**
-	 * Reader settings panel. Step 7 has only the Theme fieldset; Step 8
-	 * adds Font / Size / Line-height / Column-width fieldsets to the
-	 * same `<form>` shell. Keep the structure (button + panel + fieldsets)
-	 * stable so step 8's diff is just additive.
+	 * Reader settings panel. Theme + four reader-style prefs each as
+	 * their own <fieldset> in a single <form> shell — the panel's
+	 * structure is the M1 Step 7 shape unchanged.
 	 */
 
 	let open = $state(false);
@@ -68,6 +85,55 @@
 					</label>
 				{/each}
 			</fieldset>
+
+			<fieldset class="select-row">
+				<legend>Font</legend>
+				<select
+					value={fontPref.value}
+					onchange={(e) => (fontPref.value = e.currentTarget.value as FontToken)}
+				>
+					{#each FONT_TOKENS as t (t)}
+						<option value={t}>{FONT_LABELS[t]}</option>
+					{/each}
+				</select>
+			</fieldset>
+
+			<fieldset class="select-row">
+				<legend>Font size</legend>
+				<select
+					value={sizePref.value}
+					onchange={(e) => (sizePref.value = e.currentTarget.value as SizeToken)}
+				>
+					{#each SIZE_TOKENS as t (t)}
+						<option value={t}>{SIZE_LABELS[t]}</option>
+					{/each}
+				</select>
+			</fieldset>
+
+			<fieldset class="select-row">
+				<legend>Line height</legend>
+				<select
+					value={lineHeightPref.value}
+					onchange={(e) =>
+						(lineHeightPref.value = e.currentTarget.value as LineHeightToken)}
+				>
+					{#each LINE_HEIGHT_TOKENS as t (t)}
+						<option value={t}>{LINE_HEIGHT_LABELS[t]}</option>
+					{/each}
+				</select>
+			</fieldset>
+
+			<fieldset class="select-row">
+				<legend>Column width</legend>
+				<select
+					value={widthPref.value}
+					onchange={(e) => (widthPref.value = e.currentTarget.value as WidthToken)}
+				>
+					{#each WIDTH_TOKENS as t (t)}
+						<option value={t}>{WIDTH_LABELS[t]}</option>
+					{/each}
+				</select>
+			</fieldset>
 		</form>
 	</div>
 {/if}
@@ -116,7 +182,10 @@
 	fieldset {
 		border: none;
 		padding: 0;
-		margin: 0;
+		margin: 0 0 12px;
+	}
+	fieldset:last-of-type {
+		margin-bottom: 0;
 	}
 	legend {
 		font-weight: 600;
@@ -124,7 +193,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--reader-muted);
-		margin-bottom: 8px;
+		margin-bottom: 6px;
 	}
 	.option {
 		display: flex;
@@ -135,5 +204,15 @@
 	}
 	.option input {
 		accent-color: var(--reader-fg);
+	}
+	.select-row select {
+		width: 100%;
+		padding: 4px 6px;
+		font: inherit;
+		color: var(--reader-fg);
+		background: var(--reader-bg);
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		cursor: pointer;
 	}
 </style>

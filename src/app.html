@@ -5,22 +5,99 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		<script>
-			// Anti-flash: seed [data-theme] on <html> from localStorage
-			// BEFORE Svelte hydrates so cold loads paint in the user's
-			// saved theme, not the default. Mirrors the validation in
-			// src/lib/theme.svelte.ts. Must stay tiny + dependency-free.
+			// Anti-flash: seed [data-theme] + reader CSS vars on <html>
+			// from localStorage BEFORE Svelte hydrates so cold loads
+			// paint with the user's saved settings, not the defaults.
+			// Mirrors the validation + token→CSS maps in
+			// src/lib/theme.svelte.ts and src/lib/prefs.svelte.ts —
+			// keep these in sync if you add new tokens. Must stay
+			// tiny + dependency-free (runs before Svelte hydrates).
 			(function () {
+				var root = document.documentElement;
+
+				// Theme (HTML attribute)
 				try {
 					var t = localStorage.getItem('prefs:reader:theme');
-					document.documentElement.setAttribute(
+					root.setAttribute(
 						'data-theme',
 						t === 'paper' || t === 'sepia' || t === 'dark' ? t : 'sepia'
 					);
 				} catch (e) {
-					document.documentElement.setAttribute('data-theme', 'sepia');
+					root.setAttribute('data-theme', 'sepia');
 				}
+
+				// Reader prefs (CSS vars on documentElement.style)
+				var FONTS = {
+					georgia: 'Georgia, serif',
+					lucida: '"Lucida Sans Unicode", "Lucida Grande", sans-serif',
+					atkinson: '"Atkinson Hyperlegible", sans-serif',
+					'system-serif': 'ui-serif, Cambria, "Times New Roman", serif'
+				};
+				var WIDTHS = {
+					narrow: '560px',
+					medium: '680px',
+					wide: '840px',
+					'extra-wide': '1000px'
+				};
+
+				function applyPref(key, fallback, allowed, cssVar, toCss) {
+					var v;
+					try {
+						v = localStorage.getItem(key);
+					} catch (e) {
+						v = null;
+					}
+					if (allowed.indexOf(v) === -1) v = fallback;
+					root.style.setProperty(cssVar, toCss(v));
+				}
+
+				applyPref(
+					'prefs:reader:font',
+					'georgia',
+					['georgia', 'lucida', 'atkinson', 'system-serif'],
+					'--reader-font-family',
+					function (v) {
+						return FONTS[v];
+					}
+				);
+				applyPref(
+					'prefs:reader:size',
+					'18',
+					['16', '18', '20', '22'],
+					'--reader-font-size',
+					function (v) {
+						return v + 'px';
+					}
+				);
+				applyPref(
+					'prefs:reader:lh',
+					'1.6',
+					['1.4', '1.6', '1.8'],
+					'--reader-line-height',
+					function (v) {
+						return v;
+					}
+				);
+				applyPref(
+					'prefs:reader:width',
+					'medium',
+					['narrow', 'medium', 'wide', 'extra-wide'],
+					'--reader-max-width',
+					function (v) {
+						return WIDTHS[v];
+					}
+				);
 			})();
 		</script>
+		<!-- Atkinson Hyperlegible — one of the four font picker options
+		     (M1 Step 8). Loads from Google Fonts CDN; the other three
+		     options are system fonts and don't need any external load. -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible&display=swap"
+		/>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

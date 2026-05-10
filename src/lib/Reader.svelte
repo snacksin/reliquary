@@ -8,12 +8,12 @@
 
 <style>
 	.reader {
-		max-width: 680px;
+		max-width: var(--reader-max-width);
 		margin: 0 auto;
 		padding: 80px 40px;
-		font-family: Georgia, serif;
-		font-size: 18px;
-		line-height: 1.6;
+		font-family: var(--reader-font-family);
+		font-size: var(--reader-font-size);
+		line-height: var(--reader-line-height);
 		color: var(--reader-fg);
 	}
 	/* Constrain embedded images (header banners, chapter art) to the
