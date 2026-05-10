@@ -20,6 +20,10 @@
 	const isFavorite = $derived(pendingFavorite ?? data.work.is_favorite);
 	let favoriteError: string | null = $state(null);
 
+	// Cover-slot placeholder glyph: first letter of the title, uppercased.
+	// Mirrors the helper on the library page; v1.5 swaps in real cover art.
+	const glyph = $derived(data.work.title?.[0]?.toUpperCase() ?? '?');
+
 	async function toggleFavorite() {
 		const next = !isFavorite;
 		pendingFavorite = next;
@@ -45,19 +49,26 @@
 
 <main>
 	<p class="back"><a href="/">← Library</a></p>
-	<div class="title-row">
-		<h1>{data.work.title}</h1>
-		<button
-			class="heart"
-			class:filled={isFavorite}
-			onclick={toggleFavorite}
-			aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-			aria-pressed={isFavorite}
-		>
-			{isFavorite ? '♥' : '♡'}
-		</button>
+	<div class="detail-header">
+		<div class="cover-slot" aria-hidden="true">
+			<span class="cover-glyph">{glyph}</span>
+		</div>
+		<div class="detail-header-text">
+			<div class="title-row">
+				<h1>{data.work.title}</h1>
+				<button
+					class="heart"
+					class:filled={isFavorite}
+					onclick={toggleFavorite}
+					aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+					aria-pressed={isFavorite}
+				>
+					{isFavorite ? '♥' : '♡'}
+				</button>
+			</div>
+			<p class="author">by {data.work.author}</p>
+		</div>
 	</div>
-	<p class="author">by {data.work.author}</p>
 	{#if favoriteError}
 		<p class="error">{favoriteError}</p>
 	{/if}
@@ -113,6 +124,36 @@
 	}
 	.back a:hover {
 		text-decoration: underline;
+	}
+	/* Header lays out the cover slot to the left of the title block. The
+	   cover is the same 140×200 placeholder used on the library page;
+	   v1.5 will swap in real cover art across both surfaces. */
+	.detail-header {
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+	}
+	.detail-header-text {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.cover-slot {
+		flex: 0 0 140px;
+		width: 140px;
+		height: 200px;
+		background: var(--reader-cover-placeholder);
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cover-glyph {
+		font-family: Georgia, serif;
+		font-size: 56px;
+		line-height: 1;
+		color: var(--reader-muted);
+		opacity: 0.55;
+		user-select: none;
 	}
 	.title-row {
 		display: flex;
