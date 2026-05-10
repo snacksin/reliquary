@@ -196,7 +196,7 @@
 		margin-top: 0.5rem;
 	}
 	.empty {
-		color: #666;
+		color: var(--reader-muted);
 		margin-top: 1.5rem;
 	}
 
@@ -208,7 +208,7 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #555;
+		color: var(--reader-muted);
 		margin: 0 0 0.75rem;
 	}
 
@@ -238,7 +238,7 @@
 	.cover-slot {
 		width: 140px;
 		height: 200px;
-		background: #d8d3c4;
+		background: var(--reader-cover-placeholder);
 		border-radius: 4px;
 		margin-bottom: 8px;
 	}
@@ -254,7 +254,7 @@
 	.cr-meta {
 		display: block;
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--reader-muted);
 		margin-top: 4px;
 	}
 	.cr-card .remove {
@@ -266,18 +266,19 @@
 		padding: 0;
 		border: none;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.92);
-		color: #555;
+		background: var(--reader-bg);
+		color: var(--reader-muted);
 		font-size: 16px;
 		line-height: 1;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 	}
 	.cr-card .remove:hover {
-		background: white;
-		color: #c00;
+		background: var(--reader-card-bg);
+		color: #c43c4f;
 	}
 
 	/* Full library list */
@@ -288,7 +289,7 @@
 	}
 	ul.works li {
 		padding: 0.6rem 0;
-		border-bottom: 1px solid #eee;
+		border-bottom: 1px solid var(--reader-border);
 	}
 	ul.works a {
 		display: block;
@@ -300,7 +301,7 @@
 	}
 	.meta {
 		display: block;
-		color: #666;
+		color: var(--reader-muted);
 		font-size: 0.9rem;
 		margin-top: 0.15rem;
 	}

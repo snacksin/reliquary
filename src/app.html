@@ -4,6 +4,23 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Anti-flash: seed [data-theme] on <html> from localStorage
+			// BEFORE Svelte hydrates so cold loads paint in the user's
+			// saved theme, not the default. Mirrors the validation in
+			// src/lib/theme.svelte.ts. Must stay tiny + dependency-free.
+			(function () {
+				try {
+					var t = localStorage.getItem('prefs:reader:theme');
+					document.documentElement.setAttribute(
+						'data-theme',
+						t === 'paper' || t === 'sepia' || t === 'dark' ? t : 'sepia'
+					);
+				} catch (e) {
+					document.documentElement.setAttribute('data-theme', 'sepia');
+				}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
