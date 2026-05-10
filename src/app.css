@@ -66,6 +66,20 @@
 	color-scheme: dark;
 }
 
+/* Reader-prefs defaults (font / size / line-height / column width).
+ * The inline boot script in app.html sets these as inline styles on
+ * <html> before paint based on localStorage; these :root values are
+ * the fallback if the script doesn't run (and document the
+ * source-of-truth defaults). Defaults match the POC reader.
+ * Token→CSS mapping lives in src/lib/prefs.svelte.ts and the boot
+ * script — keep all three in sync if you add tokens. */
+:root {
+	--reader-font-family: Georgia, serif;
+	--reader-font-size: 18px;
+	--reader-line-height: 1.6;
+	--reader-max-width: 680px;
+}
+
 /* Theme applies app-wide. Body bg + color cascade to every page;
    pages that want different colors set them explicitly. */
 body {
