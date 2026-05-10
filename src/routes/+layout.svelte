@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import SettingsPanel from '$lib/SettingsPanel.svelte';
 	import { themeStore } from '$lib/theme.svelte';
 
 	let { children } = $props();
@@ -22,5 +23,14 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<!--
+	The settings panel renders globally so the user can switch theme
+	(and, after Step 8, font/size/line-height/column-width) from any
+	page — library, detail, preface, afterword, chapter. The
+	hamburger button is fixed-position top-right; click-outside-
+	to-close logic lives inside SettingsPanel.svelte.
+-->
+<SettingsPanel />
 
 {@render children()}
