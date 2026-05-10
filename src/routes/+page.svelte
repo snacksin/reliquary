@@ -34,6 +34,13 @@
 		return Math.min(100, Math.round((w.last_read.chapter / w.chapter_count) * 100));
 	}
 
+	// Cover-slot placeholder glyph: first letter of the title, uppercased.
+	// Real cover-art extraction is v1.5; until then this gives the slot
+	// some character so it doesn't read as a broken image.
+	function glyph(w: Work): string {
+		return w.title?.[0]?.toUpperCase() ?? '?';
+	}
+
 	/**
 	 * One-shots (chapter_count === 1) would always show "100% through"
 	 * the moment the user clicks them, which is misleading. Use a
@@ -108,7 +115,9 @@
 				{#each continueReading as work (work.id)}
 					<article class="cr-card">
 						<a href={continueHref(work)} class="cr-card-link">
-							<div class="cover-slot" aria-hidden="true"></div>
+							<div class="cover-slot" aria-hidden="true">
+								<span class="cover-glyph">{glyph(work)}</span>
+							</div>
 							<strong>{work.title}</strong>
 							<span class="cr-meta">{progressLabel(work)}</span>
 						</a>
@@ -132,7 +141,9 @@
 				{#each favorites as work (work.id)}
 					<article class="cr-card">
 						<a href="/works/{work.id}" class="cr-card-link">
-							<div class="cover-slot" aria-hidden="true"></div>
+							<div class="cover-slot" aria-hidden="true">
+								<span class="cover-glyph">{glyph(work)}</span>
+							</div>
 							<strong>{work.title}</strong>
 							<span class="cr-meta">by {work.author}</span>
 						</a>
@@ -150,19 +161,24 @@
 			<ul class="works">
 				{#each data.works as work (work.id)}
 					<li>
-						<a href="/works/{work.id}">
-							<strong>
-								{work.title}
-								{#if work.is_favorite}<span
-										class="fav-indicator"
-										aria-label="Favorited">♥</span
-									>{/if}
-							</strong>
-							<span class="meta"
-								>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1
-									? ''
-									: 's'}</span
-							>
+						<a href="/works/{work.id}" class="library-row">
+							<div class="cover-slot" aria-hidden="true">
+								<span class="cover-glyph">{glyph(work)}</span>
+							</div>
+							<div class="library-row-text">
+								<strong>
+									{work.title}
+									{#if work.is_favorite}<span
+											class="fav-indicator"
+											aria-label="Favorited">♥</span
+										>{/if}
+								</strong>
+								<span class="meta"
+									>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1
+										? ''
+										: 's'}</span
+								>
+							</div>
 						</a>
 					</li>
 				{/each}
@@ -232,15 +248,33 @@
 	.cr-card-link:hover strong {
 		text-decoration: underline;
 	}
-	/* Cover-art placeholder. Step 9 in M1 promotes this to real cover
-	   art; keeping the dimensions stable now means that change is
-	   purely about replacing the inner content. */
+	/* Cover-art placeholder. Shared by carousels (Continue Reading,
+	   Favorites) and the full library list. v1.5 swaps the gray box for
+	   real cover art; the glyph below is the M1 placeholder so the slot
+	   doesn't read as a broken image. */
 	.cover-slot {
+		flex: 0 0 140px;
 		width: 140px;
 		height: 200px;
 		background: var(--reader-cover-placeholder);
 		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	/* Carousel cards stack vertically (cover above title), so the cover
+	   needs bottom space. The library list lays out horizontally and
+	   handles spacing via flex `gap`. */
+	.cr-card .cover-slot {
 		margin-bottom: 8px;
+	}
+	.cover-glyph {
+		font-family: Georgia, serif;
+		font-size: 56px;
+		line-height: 1;
+		color: var(--reader-muted);
+		opacity: 0.55;
+		user-select: none;
 	}
 	.cr-card strong {
 		font-size: 0.95rem;
@@ -288,15 +322,21 @@
 		margin: 0;
 	}
 	ul.works li {
-		padding: 0.6rem 0;
+		padding: 0.85rem 0;
 		border-bottom: 1px solid var(--reader-border);
 	}
-	ul.works a {
-		display: block;
+	.library-row {
+		display: flex;
+		align-items: center;
+		gap: 14px;
 		color: inherit;
 		text-decoration: none;
 	}
-	ul.works a:hover strong {
+	.library-row-text {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.library-row:hover strong {
 		text-decoration: underline;
 	}
 	.meta {
