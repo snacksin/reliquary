@@ -4,15 +4,6 @@
 	let { html }: { html: string } = $props();
 </script>
 
-<svelte:head>
-	<style>
-		body {
-			margin: 0;
-			background: var(--reader-bg);
-		}
-	</style>
-</svelte:head>
-
 <SettingsPanel />
 
 <article class="reader">
@@ -35,5 +26,14 @@
 	.reader :global(img) {
 		max-width: 100%;
 		height: auto;
+	}
+	/* AO3 chapter HTML is full of links (tag lists in the preface,
+	   inline references in chapter text). Theme them so dark mode
+	   doesn't render them in the unreadable browser-default blue. */
+	.reader :global(a) {
+		color: var(--reader-link);
+	}
+	.reader :global(a:visited) {
+		color: var(--reader-link-visited);
 	}
 </style>

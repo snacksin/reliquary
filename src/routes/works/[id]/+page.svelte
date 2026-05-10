@@ -108,7 +108,7 @@
 		font-size: 0.9rem;
 	}
 	.back a {
-		color: #555;
+		color: var(--reader-muted);
 		text-decoration: none;
 	}
 	.back a:hover {
@@ -127,13 +127,13 @@
 	.heart {
 		flex: 0 0 auto;
 		background: none;
-		border: 1px solid #ddd;
+		border: 1px solid var(--reader-border);
 		border-radius: 50%;
 		width: 38px;
 		height: 38px;
 		font-size: 22px;
 		line-height: 1;
-		color: #999;
+		color: var(--reader-muted);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -148,13 +148,16 @@
 		border-color: #c43c4f;
 		color: #c43c4f;
 	}
+	/* Filled state uses a translucent red overlay so the favorite
+	   tint reads on any theme background — a flat #fdecef would
+	   blow out on Dark. */
 	.heart.filled {
 		color: #c43c4f;
 		border-color: #c43c4f;
-		background: #fdecef;
+		background: rgba(196, 60, 79, 0.12);
 	}
 	.author {
-		color: #666;
+		color: var(--reader-muted);
 		margin-top: 0;
 	}
 	.error {
@@ -183,13 +186,22 @@
 		background: var(--reader-accent);
 	}
 	.summary {
-		background: #f7f7f7;
+		background: var(--reader-card-bg);
 		padding: 0.75rem 1rem;
 		border-radius: 4px;
 		margin: 1rem 0;
 	}
 	.summary :global(p) {
 		margin: 0.5rem 0;
+	}
+	/* Tag links inside the rendered AO3 summary HTML — picked up the
+	   same theming as chapter-page links so they don't fall back to
+	   the unreadable browser-default blue on dark theme. */
+	.summary :global(a) {
+		color: var(--reader-link);
+	}
+	.summary :global(a:visited) {
+		color: var(--reader-link-visited);
 	}
 	h2 {
 		font-size: 1.1rem;
@@ -213,7 +225,7 @@
 		margin: 0.5rem 0;
 	}
 	.wrapper-link a {
-		color: #555;
+		color: var(--reader-muted);
 		text-decoration: none;
 	}
 	.wrapper-link a:hover {
