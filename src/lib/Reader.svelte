@@ -1,10 +1,6 @@
 <script lang="ts">
-	import SettingsPanel from '$lib/SettingsPanel.svelte';
-
 	let { html }: { html: string } = $props();
 </script>
-
-<SettingsPanel />
 
 <article class="reader">
 	{@html html}
