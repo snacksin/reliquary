@@ -19,6 +19,29 @@ export type ParsedImage = {
 	mediaType: string;
 };
 
+/**
+ * Tag categories the parser populates from the AO3 preface metadata.
+ *
+ * Deliberately excludes `'personal'` — that category is reserved for
+ * user-toggled tags and is NEVER created during ingest. Don't add a
+ * branch here that auto-derives a personal tag from any signal (read
+ * time, rating, etc.); see migrations/0004_favorites.sql for the
+ * companion no-auto-favoriting rule that established this pattern.
+ */
+export type TagCategory =
+	| 'rating'
+	| 'warning'
+	| 'category'
+	| 'fandom'
+	| 'relationship'
+	| 'character'
+	| 'freeform';
+
+export type ParsedTag = {
+	category: TagCategory;
+	name: string;
+};
+
 export type ParsedEpub = {
 	title: string;
 	author: string;
@@ -26,6 +49,7 @@ export type ParsedEpub = {
 	chapters: ParsedChapter[];
 	chapterCount: number;
 	images: ParsedImage[];
+	tags: ParsedTag[];
 };
 
 /**
@@ -112,6 +136,108 @@ function classify(
 		return 'summary';
 	}
 	return 'chapter';
+}
+
+/**
+ * Map AO3 preface heading text (singular or plural, colon optional) to
+ * the database tag category. Headings outside this map (Language,
+ * Series, Collections, Stats, Words, Published, Updated, etc.) are
+ * deliberately skipped — they're metadata, not tags.
+ */
+const HEADING_TO_CATEGORY: Record<string, TagCategory> = {
+	rating: 'rating',
+	ratings: 'rating',
+	'archive warning': 'warning',
+	'archive warnings': 'warning',
+	category: 'category',
+	categories: 'category',
+	fandom: 'fandom',
+	fandoms: 'fandom',
+	relationship: 'relationship',
+	relationships: 'relationship',
+	character: 'character',
+	characters: 'character',
+	'additional tag': 'freeform',
+	'additional tags': 'freeform'
+};
+
+/**
+ * Decode the small set of HTML entities AO3 actually emits in tag text:
+ * the named XML/HTML5 basics plus numeric (decimal + hex) refs. AO3 tag
+ * names are otherwise stored verbatim — Unicode characters (curly quotes,
+ * emoji, kanji) are already correctly UTF-8 in the source XHTML.
+ */
+function decodeEntities(s: string): string {
+	return s
+		.replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)))
+		.replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'");
+}
+
+/**
+ * Extract AO3 preface tags from the preface chapter's HTML. AO3 wraps
+ * its tag block in a `<dl>` with class either `tags` (current) or
+ * `meta` (older fic ages, ~pre-2015). The structure inside is identical:
+ * alternating `<dt>Heading:</dt><dd><a>value</a>, <a>value</a></dd>`.
+ *
+ * Each <a> inside a recognized category's <dd> becomes one tag row.
+ * Categories not in HEADING_TO_CATEGORY (Language, Series, Stats, etc.)
+ * are skipped. Returns deduped tags — if a fic somehow repeats the same
+ * (category, name) pair, only one row is returned.
+ *
+ * Resilience choices: we don't use a full HTML parser because the input
+ * is well-formed AO3 XHTML with a tightly-bounded grammar and we want
+ * to avoid a dep. The regex is anchored on the `<dl class="tags|meta">`
+ * shell so it can't pick up dt/dd pairs from unrelated `<dl>` blocks
+ * elsewhere in the preface.
+ */
+export function extractPrefaceTags(html: string): ParsedTag[] {
+	if (!html) return [];
+
+	// Find the AO3 tag block. Tolerant of class-attribute ordering and
+	// additional class tokens (calibre rewrites can add their own).
+	const dlMatch = html.match(
+		/<dl\b[^>]*class\s*=\s*(["'])[^"']*\b(?:tags|meta)\b[^"']*\1[^>]*>([\s\S]*?)<\/dl>/i
+	);
+	if (!dlMatch) return [];
+	const dlInner = dlMatch[2];
+
+	// Walk dt → dd pairs. The dd extends from after its opening tag to
+	// the next dt or the end of the dl block. Capture both in one pass.
+	const pairRe = /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi;
+
+	const tags: ParsedTag[] = [];
+	const seen = new Set<string>(); // dedupe across (category, name)
+
+	let m: RegExpExecArray | null;
+	while ((m = pairRe.exec(dlInner)) !== null) {
+		const heading = decodeEntities(m[1].replace(/<[^>]+>/g, ''))
+			.replace(/[:\s]+$/u, '')
+			.trim()
+			.toLowerCase();
+		const category = HEADING_TO_CATEGORY[heading];
+		if (!category) continue;
+
+		// Each tag value is the text content of one <a> inside the <dd>.
+		const ddInner = m[2];
+		const linkRe = /<a\b[^>]*>([\s\S]*?)<\/a>/gi;
+		let a: RegExpExecArray | null;
+		while ((a = linkRe.exec(ddInner)) !== null) {
+			const raw = a[1].replace(/<[^>]+>/g, ''); // strip any inner markup
+			const name = decodeEntities(raw).replace(/\s+/g, ' ').trim();
+			if (!name) continue;
+			const key = `${category}::${name}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			tags.push({ category, name });
+		}
+	}
+
+	return tags;
 }
 
 /**
@@ -202,6 +328,13 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			throw new Error('EPUB has no chapters');
 		}
 
+		// Tag extraction. Reads the preface row's HTML (already isolated
+		// by the wrapper-aware classification above) and pulls structured
+		// AO3 tags out of its `<dl class="tags">` (or .meta) block. If
+		// there's no preface or the dl is missing, tags stays [].
+		const prefaceChapter = chapters.find((c) => c.kind === 'preface');
+		const tags = prefaceChapter ? extractPrefaceTags(prefaceChapter.html) : [];
+
 		// Image extraction. listImage() returns image manifest entries;
 		// getImageAsync(id) returns [Buffer, mediaType]. We collapse
 		// each href to its basename so the on-disk filename matches the
@@ -224,7 +357,7 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			}
 		}
 
-		return { title, author, summary, chapters, chapterCount, images };
+		return { title, author, summary, chapters, chapterCount, images, tags };
 	} finally {
 		await unlink(tmpPath).catch(() => {});
 	}
