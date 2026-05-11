@@ -11,7 +11,7 @@
 	// Continue Reading: most-recently-read first. /api/works orders by
 	// upload date (ingested_at DESC), which would surface freshly
 	// uploaded fics regardless of when their reading happened — wrong
-	// for a "Continue Reading" carousel. Re-sort the read subset by
+	// for a "Continue Reading" list. Re-sort the read subset by
 	// last_read.updated_at DESC, symmetric to how Favorites sorts by
 	// favorited_at DESC.
 	const continueReading = $derived(
@@ -21,8 +21,7 @@
 				(b.last_read?.updated_at ?? '').localeCompare(a.last_read?.updated_at ?? '')
 			)
 	);
-	// Favorites carousel: most-recently-favorited first. /api/works
-	// orders by ingested_at; we re-sort the favorited subset here.
+	// Favorites list: most-recently-favorited first.
 	const favorites = $derived(
 		data.works
 			.filter((w) => w.is_favorite && w.favorited_at)
@@ -49,13 +48,13 @@
 	function progressLabel(w: Work): string {
 		if (!w.last_read) return '';
 		if (w.chapter_count === 1) return 'In progress';
-		return `Chapter ${w.last_read.chapter} · ${progressPercent(w)}% through`;
+		return `Ch ${w.last_read.chapter} · ${progressPercent(w)}%`;
 	}
 
 	/**
-	 * Continue Reading carousel: always resume — the carousel only
-	 * exists for works with `last_read`, and the user clicked the CR
-	 * card *because* they want to pick up where they left off.
+	 * Continue Reading entry click: always resume — the section only
+	 * exists for works with `last_read`, and the user clicked it
+	 * *because* they want to pick up where they left off.
 	 */
 	function continueHref(w: Work): string {
 		return `/works/${w.id}/ch/${w.last_read!.chapter}?continue=1`;
@@ -90,74 +89,81 @@
 
 <svelte:head><title>Reliquary (POC)</title></svelte:head>
 
-<main>
-	<h1>Reliquary (POC)</h1>
+<main class="library">
+	<header class="library-header">
+		<h1>Reliquary (POC)</h1>
+		<button class="upload" onclick={() => fileInput?.click()} disabled={uploading}>
+			{uploading ? 'Uploading…' : 'Upload EPUB'}
+		</button>
+		<input
+			bind:this={fileInput}
+			type="file"
+			accept=".epub,application/epub+zip"
+			hidden
+			onchange={handleFileChange}
+		/>
+		{#if errorMessage}
+			<p class="error">{errorMessage}</p>
+		{/if}
+	</header>
 
-	<button onclick={() => fileInput?.click()} disabled={uploading}>
-		{uploading ? 'Uploading…' : 'Upload EPUB'}
-	</button>
-	<input
-		bind:this={fileInput}
-		type="file"
-		accept=".epub,application/epub+zip"
-		hidden
-		onchange={handleFileChange}
-	/>
+	<aside class="left-col" aria-label="Reading lists">
+		{#if continueReading.length > 0}
+			<section class="side-section">
+				<h2>Continue Reading</h2>
+				<ul class="side-list">
+					{#each continueReading as work (work.id)}
+						<li class="side-card">
+							<a href={continueHref(work)} class="side-card-link">
+								<div class="cover-slot" aria-hidden="true">
+									<span class="cover-glyph">{glyph(work)}</span>
+								</div>
+								<strong>{work.title}</strong>
+								<span class="side-meta">{progressLabel(work)}</span>
+							</a>
+							<button
+								class="remove"
+								onclick={() => handleRemove(work.id)}
+								aria-label="Remove from Continue Reading"
+							>
+								×
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
-	{#if errorMessage}
-		<p class="error">{errorMessage}</p>
-	{/if}
+		{#if favorites.length > 0}
+			<section class="side-section">
+				<h2>Favorites</h2>
+				<ul class="side-list">
+					{#each favorites as work (work.id)}
+						<li class="side-card">
+							<a href="/works/{work.id}" class="side-card-link">
+								<div class="cover-slot" aria-hidden="true">
+									<span class="cover-glyph">{glyph(work)}</span>
+								</div>
+								<strong>{work.title}</strong>
+								<span class="side-meta">by {work.author}</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+	</aside>
 
-	{#if continueReading.length > 0}
-		<section class="continue-reading">
-			<h2>Continue Reading</h2>
-			<div class="carousel">
-				{#each continueReading as work (work.id)}
-					<article class="cr-card">
-						<a href={continueHref(work)} class="cr-card-link">
-							<div class="cover-slot" aria-hidden="true">
-								<span class="cover-glyph">{glyph(work)}</span>
-							</div>
-							<strong>{work.title}</strong>
-							<span class="cr-meta">{progressLabel(work)}</span>
-						</a>
-						<button
-							class="remove"
-							onclick={() => handleRemove(work.id)}
-							aria-label="Remove from Continue Reading"
-						>
-							×
-						</button>
-					</article>
-				{/each}
-			</div>
-		</section>
-	{/if}
-
-	{#if favorites.length > 0}
-		<section class="favorites">
-			<h2>Favorites</h2>
-			<div class="carousel">
-				{#each favorites as work (work.id)}
-					<article class="cr-card">
-						<a href="/works/{work.id}" class="cr-card-link">
-							<div class="cover-slot" aria-hidden="true">
-								<span class="cover-glyph">{glyph(work)}</span>
-							</div>
-							<strong>{work.title}</strong>
-							<span class="cr-meta">by {work.author}</span>
-						</a>
-					</article>
-				{/each}
-			</div>
-		</section>
-	{/if}
-
-	{#if data.works.length === 0}
-		<p class="empty">No works yet — upload an EPUB to get started.</p>
-	{:else}
-		<section class="full-library">
-			{#if continueReading.length > 0 || favorites.length > 0}<h2>Library</h2>{/if}
+	<section class="middle-col" aria-label="Library">
+		<h2 class="middle-heading">
+			Library
+			{#if data.works.length > 0}
+				<span class="middle-count">{data.works.length} work{data.works.length === 1 ? '' : 's'}</span>
+			{/if}
+		</h2>
+		{#if data.works.length === 0}
+			<p class="empty">No works yet — upload an EPUB to get started.</p>
+		{:else}
 			<ul class="works">
 				{#each data.works as work (work.id)}
 					<li>
@@ -183,43 +189,99 @@
 					</li>
 				{/each}
 			</ul>
+		{/if}
+	</section>
+
+	<aside class="right-col" aria-label="Search and filters">
+		<!--
+			Right-column placeholder. Step 5 (tag-filter sidebar) renders
+			here above the search box from Step 7. The placeholder is
+			intentional foreshadowing so the layout doesn't shift when
+			filters land — keep the same grid track width.
+		-->
+		<section class="side-section right-placeholder">
+			<h2>Filters</h2>
+			<p class="placeholder-hint">Search and tag filters coming soon.</p>
 		</section>
-	{/if}
+	</aside>
 </main>
 
 <style>
-	main {
-		max-width: 720px;
+	/*
+	 * Three-column library layout per DESIGN.md §7 canonical wireframe.
+	 *
+	 * Grid template:
+	 *   [header spans all 3]
+	 *   [left 200px] [middle 1fr] [right 240px]
+	 *
+	 * Narrow-viewport behavior (<900px): collapse to a single column,
+	 * sections stack in document order. Chosen over a drawer pattern
+	 * because the right column is an empty placeholder for M2.1 Step 4 —
+	 * a drawer toggle for empty content is more annoying than a scroll-
+	 * past-it stack. Steps 5/7 may revisit this once the right column
+	 * has real content the user might want to hide.
+	 */
+	.library {
+		max-width: 1280px;
 		margin: 2rem auto;
-		padding: 0 1rem;
+		padding: 0 1.25rem;
 		font-family: system-ui, sans-serif;
+		display: grid;
+		grid-template-columns: 200px 1fr 240px;
+		grid-template-areas:
+			'header header header'
+			'left   middle right';
+		gap: 1.5rem 1.75rem;
 	}
-	h1 {
+
+	.library-header {
+		grid-area: header;
+		/* Right-pad past the fixed hamburger button (40px wide + 16px
+		   right edge + a bit of breathing room) so the upload button
+		   never sits under it. */
+		padding-right: 72px;
+	}
+	.library-header h1 {
 		font-size: 1.6rem;
-		margin-bottom: 1rem;
+		margin: 0 0 0.75rem;
 	}
-	button {
+	.library-header .upload {
 		padding: 0.4rem 0.8rem;
 		font: inherit;
 		cursor: pointer;
 	}
-	button[disabled] {
+	.library-header .upload[disabled] {
 		opacity: 0.6;
 		cursor: progress;
 	}
 	.error {
 		color: #b00;
-		margin-top: 0.5rem;
-	}
-	.empty {
-		color: var(--reader-muted);
-		margin-top: 1.5rem;
+		margin: 0.5rem 0 0;
 	}
 
-	section {
-		margin: 1.75rem 0;
+	.left-col {
+		grid-area: left;
+		min-width: 0;
 	}
-	section h2 {
+	.middle-col {
+		grid-area: middle;
+		min-width: 0;
+	}
+	.right-col {
+		grid-area: right;
+		min-width: 0;
+	}
+
+	/*
+	 * Section header style shared between the sidebars and the middle
+	 * column heading. Small uppercase muted label; the same shape as
+	 * the M1 carousel headings so the visual rhythm carries over.
+	 */
+	.side-section {
+		margin-bottom: 1.5rem;
+	}
+	.side-section > h2,
+	.middle-heading {
 		font-size: 0.85rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -227,56 +289,41 @@
 		color: var(--reader-muted);
 		margin: 0 0 0.75rem;
 	}
-
-	/* Continue Reading carousel */
-	.carousel {
+	.middle-heading {
 		display: flex;
-		gap: 14px;
-		overflow-x: auto;
-		padding-bottom: 8px;
-		scrollbar-width: thin;
+		align-items: baseline;
+		gap: 0.6rem;
 	}
-	.cr-card {
-		flex: 0 0 140px;
+	.middle-count {
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: normal;
+		font-size: 0.85em;
+	}
+
+	/* Left-column compact cards: cover on top, title + meta below.
+	   Same visual language as the M1 carousel card, just stacked
+	   vertically in a list. */
+	.side-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+	.side-card {
 		position: relative;
 	}
-	.cr-card-link {
+	.side-card-link {
 		display: block;
 		color: inherit;
 		text-decoration: none;
 	}
-	.cr-card-link:hover strong {
+	.side-card-link:hover strong {
 		text-decoration: underline;
 	}
-	/* Cover-art placeholder. Shared by carousels (Continue Reading,
-	   Favorites) and the full library list. v1.5 swaps the gray box for
-	   real cover art; the glyph below is the M1 placeholder so the slot
-	   doesn't read as a broken image. */
-	.cover-slot {
-		flex: 0 0 140px;
-		width: 140px;
-		height: 200px;
-		background: var(--reader-cover-placeholder);
-		border-radius: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	/* Carousel cards stack vertically (cover above title), so the cover
-	   needs bottom space. The library list lays out horizontally and
-	   handles spacing via flex `gap`. */
-	.cr-card .cover-slot {
-		margin-bottom: 8px;
-	}
-	.cover-glyph {
-		font-family: Georgia, serif;
-		font-size: 56px;
-		line-height: 1;
-		color: var(--reader-muted);
-		opacity: 0.55;
-		user-select: none;
-	}
-	.cr-card strong {
+	.side-card strong {
 		font-size: 0.95rem;
 		line-height: 1.3;
 		display: -webkit-box;
@@ -285,13 +332,13 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
-	.cr-meta {
+	.side-meta {
 		display: block;
 		font-size: 0.8rem;
 		color: var(--reader-muted);
 		margin-top: 4px;
 	}
-	.cr-card .remove {
+	.side-card .remove {
 		position: absolute;
 		top: 4px;
 		right: 4px;
@@ -310,12 +357,44 @@
 		justify-content: center;
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 	}
-	.cr-card .remove:hover {
+	.side-card .remove:hover {
 		background: var(--reader-card-bg);
 		color: #c43c4f;
 	}
 
-	/* Full library list */
+	/* Cover-slot placeholder. Shared by the left-column compact cards
+	   and the middle-column library rows. v1.5 swaps the gray box for
+	   real cover art; the glyph is the M1 placeholder so the slot
+	   doesn't read as a broken image. */
+	.cover-slot {
+		flex: 0 0 140px;
+		width: 140px;
+		height: 200px;
+		background: var(--reader-cover-placeholder);
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	/* Vertical stacking in the left-column cards: cover sits above
+	   the title, with a small gap. Middle-column rows lay out
+	   horizontally and handle spacing via flex `gap`. */
+	.side-card-link .cover-slot {
+		margin-bottom: 8px;
+	}
+	.cover-glyph {
+		font-family: Georgia, serif;
+		font-size: 56px;
+		line-height: 1;
+		color: var(--reader-muted);
+		opacity: 0.55;
+		user-select: none;
+	}
+
+	/* Middle-column library list — unchanged from M1 Step 9. */
+	.empty {
+		color: var(--reader-muted);
+	}
 	ul.works {
 		list-style: none;
 		padding: 0;
@@ -349,5 +428,36 @@
 		color: #c43c4f;
 		margin-left: 0.4rem;
 		font-size: 0.85em;
+	}
+
+	/* Right-column placeholder. Sized to keep the grid track width
+	   stable for when Step 5 + 7 populate it. */
+	.right-placeholder {
+		/* Top padding clears the fixed hamburger button at top:16, right:16. */
+		padding-top: 56px;
+	}
+	.placeholder-hint {
+		font-size: 0.85rem;
+		color: var(--reader-muted);
+		margin: 0;
+	}
+
+	/* Narrow viewport: stack the three areas top-to-bottom in document
+	   order (left → middle → right). Drops the sidebar track widths
+	   so each section uses the full content width. Hamburger stays
+	   fixed top-right and remains accessible. */
+	@media (max-width: 900px) {
+		.library {
+			grid-template-columns: 1fr;
+			grid-template-areas:
+				'header'
+				'left'
+				'middle'
+				'right';
+			gap: 1.25rem;
+		}
+		.right-placeholder {
+			padding-top: 0;
+		}
 	}
 </style>
