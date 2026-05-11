@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
+	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -163,14 +164,24 @@
 		<h2 class="middle-heading">
 			Library
 			{#if data.works.length > 0}
-				<span class="middle-count">{data.works.length} work{data.works.length === 1 ? '' : 's'}</span>
+				<span class="middle-count">
+					{#if data.selectedTagIds.length > 0}
+						{data.filteredWorks.length} of {data.works.length} work{data.works.length === 1
+							? ''
+							: 's'}
+					{:else}
+						{data.works.length} work{data.works.length === 1 ? '' : 's'}
+					{/if}
+				</span>
 			{/if}
 		</h2>
 		{#if data.works.length === 0}
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
+		{:else if data.filteredWorks.length === 0}
+			<p class="empty">No works match the current filters.</p>
 		{:else}
 			<ul class="works">
-				{#each data.works as work (work.id)}
+				{#each data.filteredWorks as work (work.id)}
 					<li>
 						<a href="/works/{work.id}" class="library-row">
 							<div class="cover-slot" aria-hidden="true">
@@ -201,18 +212,9 @@
 		{/if}
 	</section>
 
-	<aside class="right-col" aria-label="Search and filters">
-		<!--
-			Right-column placeholder. Step 5 (tag-filter sidebar) renders
-			here above the search box from Step 7. The placeholder is
-			intentional foreshadowing so the layout doesn't shift when
-			filters land — keep the same grid track width.
-		-->
-		<section class="side-section right-placeholder">
-			<h2>Filters</h2>
-			<p class="placeholder-hint">Search and tag filters coming soon.</p>
-		</section>
-	</aside>
+	<div class="right-col">
+		<FilterSidebar tags={data.tagGroups} selectedIds={data.selectedTagIds} />
+	</div>
 </main>
 
 <style>
@@ -484,33 +486,36 @@
 		vertical-align: -2px;
 	}
 
-	/* Right-column placeholder. Sized to keep the grid track width
-	   stable for when Step 5 + 7 populate it. */
-	.right-placeholder {
-		/* Top padding clears the fixed hamburger button at top:16, right:16. */
+	/* Right column hosts the FilterSidebar component (Step 5). Top
+	   padding clears the fixed hamburger button at top:16, right:16
+	   on desktop; dropped at narrow viewports where the hamburger
+	   doesn't share horizontal space with this column. */
+	.right-col {
 		padding-top: 56px;
 	}
-	.placeholder-hint {
-		font-size: 0.85rem;
-		color: var(--reader-muted);
-		margin: 0;
-	}
 
-	/* Narrow viewport: stack the three areas top-to-bottom in document
-	   order (left → middle → right). Drops the sidebar track widths
-	   so each section uses the full content width. Hamburger stays
-	   fixed top-right and remains accessible. */
+	/* Narrow viewport: collapse to a single column.
+	   Order is left → right → middle, NOT document order:
+	     - Continue Reading + Favorites (left) at the top
+	     - Filter sidebar (right) before the library list
+	     - Full library (middle) last
+	   Reasoning: filters are tools that apply to the results below.
+	   Putting them AFTER the results means a phone user has to scroll
+	   past the entire library to reach the filters that would shrink
+	   it. The right-before-middle order makes filters discoverable
+	   without breaking the desktop layout. This supersedes Step 4's
+	   stacked-document-order decision. */
 	@media (max-width: 900px) {
 		.library {
 			grid-template-columns: 1fr;
 			grid-template-areas:
 				'header'
 				'left'
-				'middle'
-				'right';
+				'right'
+				'middle';
 			gap: 1.25rem;
 		}
-		.right-placeholder {
+		.right-col {
 			padding-top: 0;
 		}
 	}

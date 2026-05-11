@@ -28,8 +28,21 @@ export type Work = {
 
 type Fetch = typeof fetch;
 
-export async function listWorks(fetch: Fetch): Promise<Work[]> {
-	const res = await fetch('/api/works');
+/**
+ * Fetch the library list. With no `tags`, returns every work; with
+ * `tags`, returns the OR-within / AND-across filtered subset (see
+ * `/api/works` for the filter semantics).
+ */
+export async function listWorks(
+	fetch: Fetch,
+	opts?: { tags?: number[] }
+): Promise<Work[]> {
+	const search = new URLSearchParams();
+	if (opts?.tags && opts.tags.length > 0) {
+		search.set('tags', opts.tags.join(','));
+	}
+	const query = search.toString();
+	const res = await fetch(`/api/works${query ? '?' + query : ''}`);
 	if (!res.ok) throw new Error(`GET /api/works failed: ${res.status}`);
 	return res.json();
 }
