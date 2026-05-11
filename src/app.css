@@ -31,6 +31,10 @@
 	--reader-cover-placeholder: #d8d3c4;
 	--reader-link: #8b5a2b;
 	--reader-link-visited: #6b4a8b;
+	/* Muted dusty rose — heart-button fill + library favorite indicator.
+	   Per-theme so it reads well on each background; deliberately
+	   softer than the brighter red M1 shipped (#c43c4f). */
+	--reader-heart: #a85562;
 	color-scheme: light;
 }
 
@@ -47,6 +51,7 @@
 	--reader-cover-placeholder: #e0dac5;
 	--reader-link: #1a4d7a;
 	--reader-link-visited: #5d3a7a;
+	--reader-heart: #a85562;
 	color-scheme: light;
 }
 
@@ -63,6 +68,8 @@
 	--reader-cover-placeholder: #3a3228;
 	--reader-link: #7cc7e8;
 	--reader-link-visited: #b09bd6;
+	/* Brighter on dark so the dusty rose still reads at distance. */
+	--reader-heart: #d68a93;
 	color-scheme: dark;
 }
 
