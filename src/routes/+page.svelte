@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
+	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -115,11 +116,13 @@
 					{#each continueReading as work (work.id)}
 						<li class="side-card">
 							<a href={continueHref(work)} class="side-card-link">
-								<div class="cover-slot" aria-hidden="true">
-									<span class="cover-glyph">{glyph(work)}</span>
+								<div class="side-cover" aria-hidden="true">
+									<span class="side-cover-glyph">{glyph(work)}</span>
 								</div>
-								<strong>{work.title}</strong>
-								<span class="side-meta">{progressLabel(work)}</span>
+								<div class="side-card-text">
+									<strong>{work.title}</strong>
+									<span class="side-meta">{progressLabel(work)}</span>
+								</div>
 							</a>
 							<button
 								class="remove"
@@ -141,11 +144,13 @@
 					{#each favorites as work (work.id)}
 						<li class="side-card">
 							<a href="/works/{work.id}" class="side-card-link">
-								<div class="cover-slot" aria-hidden="true">
-									<span class="cover-glyph">{glyph(work)}</span>
+								<div class="side-cover" aria-hidden="true">
+									<span class="side-cover-glyph">{glyph(work)}</span>
 								</div>
-								<strong>{work.title}</strong>
-								<span class="side-meta">by {work.author}</span>
+								<div class="side-card-text">
+									<strong>{work.title}</strong>
+									<span class="side-meta">by {work.author}</span>
+								</div>
 							</a>
 						</li>
 					{/each}
@@ -174,10 +179,14 @@
 							<div class="library-row-text">
 								<strong>
 									{work.title}
-									{#if work.is_favorite}<span
+									{#if work.is_favorite}
+										<Heart
 											class="fav-indicator"
-											aria-label="Favorited">♥</span
-										>{/if}
+											size={14}
+											fill="currentColor"
+											aria-label="Favorited"
+										/>
+									{/if}
 								</strong>
 								<span class="meta"
 									>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1
@@ -301,31 +310,54 @@
 		font-size: 0.85em;
 	}
 
-	/* Left-column compact cards: cover on top, title + meta below.
-	   Same visual language as the M1 carousel card, just stacked
-	   vertically in a list. */
+	/* Left-column compact rows: small cover thumbnail (60×90) on the
+	   left, title + meta column on the right. Matches DESIGN.md §7's
+	   canonical wireframe — Continue Reading + Favorites are scanned
+	   quickly, not browsed visually, so they get a denser shape than
+	   the middle column's full library rows. */
 	.side-list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 10px;
+		/* Internal scrolling per the §7 spec: each sidebar section
+		   caps its own height and scrolls within. Keeps the rest of
+		   the page (full library, right column) from sliding off
+		   screen when a user has 10+ in-progress fics. */
+		max-height: 40vh;
+		overflow-y: auto;
+		scrollbar-width: thin;
+		/* Inner padding so the absolutely-positioned × button on each
+		   row doesn't touch the scrollbar. */
+		padding-right: 4px;
 	}
 	.side-card {
 		position: relative;
 	}
 	.side-card-link {
-		display: block;
+		display: flex;
+		gap: 10px;
 		color: inherit;
 		text-decoration: none;
+		/* Leave a little gutter for the absolutely-positioned remove
+		   button so its hover/focus state never overlaps the title. */
+		padding-right: 18px;
 	}
 	.side-card-link:hover strong {
 		text-decoration: underline;
 	}
+	.side-card-text {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+	}
 	.side-card strong {
-		font-size: 0.95rem;
-		line-height: 1.3;
+		font-size: 0.9rem;
+		line-height: 1.25;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
@@ -334,38 +366,63 @@
 	}
 	.side-meta {
 		display: block;
-		font-size: 0.8rem;
+		font-size: 0.75rem;
 		color: var(--reader-muted);
-		margin-top: 4px;
+		margin-top: 3px;
 	}
-	.side-card .remove {
-		position: absolute;
-		top: 4px;
-		right: 4px;
-		width: 24px;
-		height: 24px;
-		padding: 0;
-		border: none;
-		border-radius: 50%;
-		background: var(--reader-bg);
-		color: var(--reader-muted);
-		font-size: 16px;
-		line-height: 1;
-		cursor: pointer;
+
+	/* Compact 60×90 thumbnail for the sidebar rows — same theme variable
+	   as the middle-column cover slot, smaller dimensions, smaller glyph. */
+	.side-cover {
+		flex: 0 0 60px;
+		width: 60px;
+		height: 90px;
+		background: var(--reader-cover-placeholder);
+		border-radius: 3px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 	}
-	.side-card .remove:hover {
-		background: var(--reader-card-bg);
-		color: #c43c4f;
+	.side-cover-glyph {
+		font-family: Georgia, serif;
+		font-size: 26px;
+		line-height: 1;
+		color: var(--reader-muted);
+		opacity: 0.55;
+		user-select: none;
 	}
 
-	/* Cover-slot placeholder. Shared by the left-column compact cards
-	   and the middle-column library rows. v1.5 swaps the gray box for
-	   real cover art; the glyph is the M1 placeholder so the slot
-	   doesn't read as a broken image. */
+	/* Remove (×) button on Continue Reading rows. Theme-aware muted
+	   color so it reads on Paper / Sepia / Dark equally; low default
+	   opacity so it doesn't compete with the title, climbs to full on
+	   hover/focus so it's discoverable. */
+	.side-card .remove {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		border: none;
+		border-radius: 50%;
+		background: transparent;
+		color: var(--reader-muted);
+		font-size: 14px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: opacity 100ms ease;
+	}
+	.side-card .remove:hover,
+	.side-card .remove:focus-visible {
+		opacity: 1;
+		color: var(--reader-heart);
+	}
+
+	/* Middle-column cover slot — unchanged 140×200 placeholder. */
 	.cover-slot {
 		flex: 0 0 140px;
 		width: 140px;
@@ -375,12 +432,6 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-	}
-	/* Vertical stacking in the left-column cards: cover sits above
-	   the title, with a small gap. Middle-column rows lay out
-	   horizontally and handle spacing via flex `gap`. */
-	.side-card-link .cover-slot {
-		margin-bottom: 8px;
 	}
 	.cover-glyph {
 		font-family: Georgia, serif;
@@ -424,10 +475,13 @@
 		font-size: 0.9rem;
 		margin-top: 0.15rem;
 	}
-	.fav-indicator {
-		color: #c43c4f;
+	/* Favorited indicator in the middle-column library list. lucide-svelte
+	   forwards `class` onto the SVG root, so this rule styles the icon
+	   directly. Vertical alignment nudges it onto the title baseline. */
+	:global(.fav-indicator) {
+		color: var(--reader-heart);
 		margin-left: 0.4rem;
-		font-size: 0.85em;
+		vertical-align: -2px;
 	}
 
 	/* Right-column placeholder. Sized to keep the grid track width

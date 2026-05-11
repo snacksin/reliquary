@@ -31,6 +31,11 @@
 	--reader-cover-placeholder: #d8d3c4;
 	--reader-link: #8b5a2b;
 	--reader-link-visited: #6b4a8b;
+	/* Heart-button fill + library favorite indicator. Same bright red
+	   across all three themes — the per-theme variable structure stays
+	   in case a future tweak wants to soften it on Dark, but the
+	   shipping value is the original M1 red on every theme. */
+	--reader-heart: #c43c4f;
 	color-scheme: light;
 }
 
@@ -47,6 +52,7 @@
 	--reader-cover-placeholder: #e0dac5;
 	--reader-link: #1a4d7a;
 	--reader-link-visited: #5d3a7a;
+	--reader-heart: #c43c4f;
 	color-scheme: light;
 }
 
@@ -63,6 +69,7 @@
 	--reader-cover-placeholder: #3a3228;
 	--reader-link: #7cc7e8;
 	--reader-link-visited: #b09bd6;
+	--reader-heart: #c43c4f;
 	color-scheme: dark;
 }
 

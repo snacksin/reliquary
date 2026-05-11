@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { setFavorite, unsetFavorite } from '$lib/api';
+	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -63,7 +64,7 @@
 					aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
 					aria-pressed={isFavorite}
 				>
-					{isFavorite ? '♥' : '♡'}
+					<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
 				</button>
 			</div>
 			<p class="author">by {data.work.author}</p>
@@ -165,6 +166,12 @@
 		margin: 0 0 0.25rem;
 		flex: 1 1 auto;
 	}
+	/* Heart-button rendering. The shape comes from lucide-svelte's
+	   <Heart /> SVG — outline by default, fill="currentColor" when
+	   favorited. So `color` drives both the stroke and the fill, and
+	   only the SVG's `fill` attribute distinguishes states (same path,
+	   identical proportions). The button chrome itself stays the same
+	   38px circle with a 1px border. */
 	.heart {
 		flex: 0 0 auto;
 		background: none;
@@ -172,8 +179,6 @@
 		border-radius: 50%;
 		width: 38px;
 		height: 38px;
-		font-size: 22px;
-		line-height: 1;
 		color: var(--reader-muted);
 		cursor: pointer;
 		display: flex;
@@ -186,16 +191,12 @@
 			background 80ms ease;
 	}
 	.heart:hover {
-		border-color: #c43c4f;
-		color: #c43c4f;
+		border-color: var(--reader-heart);
+		color: var(--reader-heart);
 	}
-	/* Filled state uses a translucent red overlay so the favorite
-	   tint reads on any theme background — a flat #fdecef would
-	   blow out on Dark. */
 	.heart.filled {
-		color: #c43c4f;
-		border-color: #c43c4f;
-		background: rgba(196, 60, 79, 0.12);
+		color: var(--reader-heart);
+		border-color: var(--reader-heart);
 	}
 	.author {
 		color: var(--reader-muted);
