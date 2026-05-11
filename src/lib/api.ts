@@ -107,6 +107,40 @@ export async function unsetFavorite(workId: string, fetch: Fetch): Promise<void>
 	if (!res.ok) throw new Error(await extractError(res));
 }
 
+/**
+ * Client-side mirror of the server's `TagCategory` (kept duplicated
+ * because anything under `$lib/server/` is server-only). The seven AO3
+ * categories Step 2's parser populates. `personal` is deliberately
+ * absent — see HANDOFF.md §9 for the structural-exclusion rationale.
+ */
+export type TagCategory =
+	| 'rating'
+	| 'warning'
+	| 'category'
+	| 'fandom'
+	| 'relationship'
+	| 'character'
+	| 'freeform';
+
+export type Tag = {
+	id: number;
+	name: string;
+	count: number;
+};
+
+/**
+ * Shape of `GET /api/tags`. All seven keys are always present, even if
+ * a given category has zero tags in the DB — the filter sidebar (Step 5)
+ * renders all seven sections without conditional checks.
+ */
+export type TagGroups = Record<TagCategory, Tag[]>;
+
+export async function getTags(fetch: Fetch): Promise<TagGroups> {
+	const res = await fetch('/api/tags');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {
