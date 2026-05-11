@@ -14,6 +14,9 @@ importers:
       epub2:
         specifier: ^3.0.2
         version: 3.0.2(ts-toolbelt@9.6.0)
+      lucide-svelte:
+        specifier: ^1.0.1
+        version: 1.0.1(svelte@5.55.5(@typescript-eslint/types@8.59.1))
     devDependencies:
       '@eslint/compat':
         specifier: ^2.0.4
@@ -1022,6 +1025,11 @@ packages:
 
   lodash@4.18.1:
     resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
+
+  lucide-svelte@1.0.1:
+    resolution: {integrity: sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg==}
+    peerDependencies:
+      svelte: ^3 || ^4 || ^5.0.0-next.42
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -2232,6 +2240,10 @@ snapshots:
       p-locate: 5.0.0
 
   lodash@4.18.1: {}
+
+  lucide-svelte@1.0.1(svelte@5.55.5(@typescript-eslint/types@8.59.1)):
+    dependencies:
+      svelte: 5.55.5(@typescript-eslint/types@8.59.1)
 
   magic-string@0.30.21:
     dependencies:
