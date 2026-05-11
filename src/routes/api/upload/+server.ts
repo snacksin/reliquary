@@ -76,6 +76,24 @@ export const POST: RequestHandler = async ({ request }) => {
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind)
 		 VALUES (?, ?, ?, ?, ?, ?)`
 	);
+	// Tag upsert: ON CONFLICT lets us always get a row id back via
+	// RETURNING regardless of insert vs. existing — no separate
+	// SELECT-after-INSERT round trip. The DO UPDATE is a no-op write
+	// just to make RETURNING fire on the conflict path.
+	//
+	// `personal` category rows are NEVER created by this code path.
+	// See TagCategory in src/lib/server/epub.ts for the matching
+	// type-level rule. Future contributors: do not add an `INSERT INTO
+	// tags (category, name) VALUES ('personal', ...)` anywhere in any
+	// ingest path. Personal tags are user-toggled only.
+	const upsertTag = db.prepare<[string, string], { id: number }>(
+		`INSERT INTO tags (category, name) VALUES (?, ?)
+		 ON CONFLICT(category, name) DO UPDATE SET name = excluded.name
+		 RETURNING id`
+	);
+	const linkWorkTag = db.prepare(
+		`INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)`
+	);
 
 	db.transaction(() => {
 		insertWork.run(
@@ -95,6 +113,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				join(workDir, chapterFilename(ch)),
 				ch.kind
 			);
+		}
+		for (const tag of parsed.tags) {
+			const row = upsertTag.get(tag.category, tag.name);
+			if (row) linkWorkTag.run(work_id, row.id);
 		}
 	})();
 
