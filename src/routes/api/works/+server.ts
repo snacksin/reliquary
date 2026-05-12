@@ -31,9 +31,42 @@ function parseTagIds(raw: string | null): number[] {
 	return [...ids];
 }
 
+/**
+ * Recognized tag categories. Mirrors the TagCategory type in
+ * src/lib/server/epub.ts; kept duplicated as a `Set` lookup here so
+ * the endpoint can reject unknown category names from the query
+ * param without importing the server-only epub module.
+ */
+const KNOWN_CATEGORIES = new Set<string>([
+	'rating',
+	'warning',
+	'category',
+	'fandom',
+	'relationship',
+	'character',
+	'freeform'
+]);
+
+/**
+ * Parse the `match_all` query param: comma-separated category names
+ * that should use AND-within semantics (all selected tags in that
+ * category must be present) instead of the default OR-within. Drops
+ * unknown names, lowercases, dedupes.
+ */
+function parseMatchAll(raw: string | null): string[] {
+	if (!raw) return [];
+	const cats = new Set<string>();
+	for (const token of raw.split(',')) {
+		const c = token.trim().toLowerCase();
+		if (KNOWN_CATEGORIES.has(c)) cats.add(c);
+	}
+	return [...cats];
+}
+
 export const GET: RequestHandler = ({ url }) => {
 	const db = getDb();
 	const tagIds = parseTagIds(url.searchParams.get('tags'));
+	const matchAll = parseMatchAll(url.searchParams.get('match_all'));
 
 	let rows: Row[];
 
@@ -51,22 +84,54 @@ export const GET: RequestHandler = ({ url }) => {
 			)
 			.all() as Row[];
 	} else {
-		// Tag filter: OR within a category, AND across categories.
-		// The subquery selects work_ids that match at least one of the
-		// requested tags, grouped per work; the HAVING clause requires
-		// each kept work covers as many distinct categories as the
-		// request spans. Example: if the request is {fandom: [A, B],
-		// freeform: [X]}, the request spans 2 distinct categories; a
-		// work must have at least one fandom in {A, B} AND at least
-		// one freeform in {X} to survive.
+		// Tag filter. Per-category mode is OR by default (any selected
+		// tag matches), or AND when that category is in `match_all`
+		// (every selected tag in that category must be present on the
+		// work). Across categories: always AND.
 		//
-		// Tag-ID list passed twice via json_each so we don't have to
-		// build a dynamic IN (?, ?, ?) clause. JSON parameter is
-		// stringified once and reused by reference.
+		// The CTE pipeline:
+		//   filter_tags     — selected tag IDs (json_each)
+		//   match_all_cats  — category names in AND-within mode (json_each)
+		//   required_per_cat — for each category in the selection,
+		//                     how many selected tags must a work match?
+		//                     AND-mode → COUNT(*); OR-mode → 1.
+		//   work_matches    — for each (work, category) pair, how many
+		//                     distinct selected tags the work has.
+		//
+		// A work passes iff for every required category, its match
+		// count meets the per-category requirement (WHERE matched >=
+		// required), and it touches every required category (the
+		// COUNT(DISTINCT category) HAVING clause).
+		//
+		// Empty match_all keeps the OR-everywhere behavior — match_all_cats
+		// returns 0 rows, the CASE falls through to ELSE 1, and the
+		// query reduces to Step 5's filter exactly.
 		const tagJson = JSON.stringify(tagIds);
+		const matchAllJson = JSON.stringify(matchAll);
 		rows = db
 			.prepare(
-				`SELECT
+				`WITH
+				   filter_tags AS (SELECT value AS tag_id FROM json_each(?)),
+				   match_all_cats AS (SELECT value AS category FROM json_each(?)),
+				   required_per_cat AS (
+				     SELECT t.category,
+				       CASE WHEN t.category IN (SELECT category FROM match_all_cats)
+				         THEN COUNT(*)
+				         ELSE 1
+				       END AS required
+				     FROM filter_tags ft
+				     JOIN tags t ON t.id = ft.tag_id
+				     GROUP BY t.category
+				   ),
+				   work_matches AS (
+				     SELECT wt.work_id, t.category,
+				            COUNT(DISTINCT wt.tag_id) AS matched
+				     FROM work_tags wt
+				     JOIN tags t ON t.id = wt.tag_id
+				     WHERE wt.tag_id IN (SELECT tag_id FROM filter_tags)
+				     GROUP BY wt.work_id, t.category
+				   )
+				 SELECT
 				   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
 				   w.favorited_at,
 				   rp.last_chapter, rp.last_scroll_y,
@@ -74,19 +139,16 @@ export const GET: RequestHandler = ({ url }) => {
 				 FROM works w
 				 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 				 WHERE w.id IN (
-				   SELECT wt.work_id
-				   FROM work_tags wt
-				   JOIN tags t ON t.id = wt.tag_id
-				   WHERE wt.tag_id IN (SELECT value FROM json_each(?))
-				   GROUP BY wt.work_id
-				   HAVING COUNT(DISTINCT t.category) = (
-				     SELECT COUNT(DISTINCT category) FROM tags
-				     WHERE id IN (SELECT value FROM json_each(?))
-				   )
+				   SELECT wm.work_id
+				   FROM work_matches wm
+				   JOIN required_per_cat r ON r.category = wm.category
+				   WHERE wm.matched >= r.required
+				   GROUP BY wm.work_id
+				   HAVING COUNT(DISTINCT wm.category) = (SELECT COUNT(*) FROM required_per_cat)
 				 )
 				 ORDER BY w.ingested_at DESC`
 			)
-			.all(tagJson, tagJson) as Row[];
+			.all(tagJson, matchAllJson) as Row[];
 	}
 
 	return json(

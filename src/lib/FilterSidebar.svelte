@@ -6,8 +6,9 @@
 	type Props = {
 		tags: TagGroups;
 		selectedIds: number[];
+		matchAllCategories: TagCategory[];
 	};
-	let { tags, selectedIds }: Props = $props();
+	let { tags, selectedIds, matchAllCategories }: Props = $props();
 
 	/**
 	 * Display order (matches DESIGN.md §7's filter sidebar; mirrors AO3's
@@ -75,6 +76,26 @@
 		return selectedIds.includes(id);
 	}
 
+	function isMatchAll(cat: TagCategory): boolean {
+		return matchAllCategories.includes(cat);
+	}
+
+	/**
+	 * Build the next URL from `tags` + `match_all` lists, replacing
+	 * both params on `page.url`. Empty lists drop the param. All
+	 * toggle handlers route through this to keep the URL the single
+	 * source of truth.
+	 */
+	function pushFilterState(nextTags: number[], nextMatchAll: TagCategory[]) {
+		const params = new URLSearchParams(page.url.searchParams);
+		if (nextTags.length > 0) params.set('tags', nextTags.join(','));
+		else params.delete('tags');
+		if (nextMatchAll.length > 0) params.set('match_all', nextMatchAll.join(','));
+		else params.delete('match_all');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
 	/**
 	 * Toggle one tag, then push the new filter set into the URL. Each
 	 * toggle is a fresh history entry (default goto behavior) so
@@ -87,18 +108,23 @@
 		const next = isSelected(id)
 			? selectedIds.filter((x) => x !== id)
 			: [...selectedIds, id];
-		const params = new URLSearchParams(page.url.searchParams);
-		if (next.length > 0) params.set('tags', next.join(','));
-		else params.delete('tags');
-		const qs = params.toString();
-		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+		pushFilterState(next, matchAllCategories);
+	}
+
+	/**
+	 * Flip a category between OR-within and AND-within (match-all) mode.
+	 * Independent per category — `match_all=fandom` doesn't affect
+	 * Freeform's OR-within behavior, and vice versa.
+	 */
+	function toggleMatchAll(cat: TagCategory) {
+		const next = isMatchAll(cat)
+			? matchAllCategories.filter((c) => c !== cat)
+			: [...matchAllCategories, cat];
+		pushFilterState(selectedIds, next);
 	}
 
 	function clearAll() {
-		const params = new URLSearchParams(page.url.searchParams);
-		params.delete('tags');
-		const qs = params.toString();
-		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+		pushFilterState([], []);
 	}
 </script>
 
@@ -127,6 +153,17 @@
 					<span class="count">{tagList.length}</span>
 				</button>
 				{#if expanded[key]}
+					<label
+						class="match-all-row"
+						title="When checked, a fic must have ALL selected {label.toLowerCase()} tags — useful for crossovers. When unchecked (default), any one matches."
+					>
+						<input
+							type="checkbox"
+							checked={isMatchAll(key)}
+							onchange={() => toggleMatchAll(key)}
+						/>
+						<span class="match-all-label">Must match all selected</span>
+					</label>
 					<ul class="tag-list">
 						{#each tagList as tag (tag.id)}
 							<li>
@@ -218,6 +255,30 @@
 	.count {
 		font-size: 0.75rem;
 		color: var(--reader-muted);
+	}
+
+	/* Per-category "Must match all selected" toggle. Sits at the top
+	   of each expanded section, above the tag list. Italicized label
+	   to distinguish it from tag rows. Same accent-color as the tag
+	   checkboxes for visual continuity. */
+	.match-all-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 0 6px;
+		margin-bottom: 4px;
+		border-bottom: 1px dashed var(--reader-border);
+		font-size: 0.75rem;
+		font-style: italic;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.match-all-row input[type='checkbox'] {
+		accent-color: var(--reader-fg);
+		flex: 0 0 auto;
+	}
+	.match-all-label {
+		flex: 1 1 auto;
 	}
 
 	.tag-list {

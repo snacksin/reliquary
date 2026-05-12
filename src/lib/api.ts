@@ -29,17 +29,26 @@ export type Work = {
 type Fetch = typeof fetch;
 
 /**
- * Fetch the library list. With no `tags`, returns every work; with
- * `tags`, returns the OR-within / AND-across filtered subset (see
- * `/api/works` for the filter semantics).
+ * Fetch the library list.
+ *
+ * - With no `tags`, returns every work.
+ * - With `tags`, returns the filtered subset. Per-category mode is OR
+ *   by default; pass `matchAll: ['fandom', ...]` to switch those
+ *   categories to AND-within (every selected tag in that category must
+ *   be present on the work). AND-across-categories always applies.
+ *
+ * See `/api/works` for the full filter semantics.
  */
 export async function listWorks(
 	fetch: Fetch,
-	opts?: { tags?: number[] }
+	opts?: { tags?: number[]; matchAll?: string[] }
 ): Promise<Work[]> {
 	const search = new URLSearchParams();
 	if (opts?.tags && opts.tags.length > 0) {
 		search.set('tags', opts.tags.join(','));
+	}
+	if (opts?.matchAll && opts.matchAll.length > 0) {
+		search.set('match_all', opts.matchAll.join(','));
 	}
 	const query = search.toString();
 	const res = await fetch(`/api/works${query ? '?' + query : ''}`);

@@ -213,7 +213,11 @@
 	</section>
 
 	<div class="right-col">
-		<FilterSidebar tags={data.tagGroups} selectedIds={data.selectedTagIds} />
+		<FilterSidebar
+			tags={data.tagGroups}
+			selectedIds={data.selectedTagIds}
+			matchAllCategories={data.matchAllCategories}
+		/>
 	</div>
 </main>
 
