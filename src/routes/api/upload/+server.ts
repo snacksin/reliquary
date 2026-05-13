@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from '$lib/server/db';
 import { parseEpub, type ParsedChapter } from '$lib/server/epub';
@@ -43,27 +43,62 @@ export const POST: RequestHandler = async ({ request }) => {
 	// rewritten image-src URLs in chapter HTML.
 	const work_id = randomUUID();
 
+	const workDir = join('data', 'works', work_id);
+
+	/**
+	 * Best-effort cleanup of partial data for this work. Called from
+	 * every error path below so a failed ingest can't leave orphaned
+	 * chapter HTML / image bytes on disk. `force: true` swallows
+	 * not-found ENOENT (the typical case — parseEpub failed before
+	 * any file write), and the outer catch swallows any rmSync
+	 * failure so cleanup never masks the original error.
+	 */
+	function cleanupWorkDir() {
+		try {
+			rmSync(workDir, { recursive: true, force: true });
+		} catch {
+			// noop — cleanup is best-effort
+		}
+	}
+
 	let parsed;
 	try {
 		parsed = await parseEpub(buffer, work_id);
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : 'unknown error';
-		throw error(400, `invalid EPUB: ${msg}`);
+		// Log the real failure for debugging — but ship a generic 400
+		// to the client. The raw error.message from epub2 often leaks
+		// the OS temp-path (e.g., "Invalid/missing file
+		// /var/folders/.../reliquary-epub-{uuid}.epub") which is both
+		// unhelpful UX and minor info-leak ahead of M2.2's LAN
+		// exposure. See TRACKING.md working-notes for the standing
+		// error-message hygiene rule.
+		console.error('[upload] EPUB parse failed:', e instanceof Error ? e.message : e);
+		cleanupWorkDir();
+		throw error(400, 'Invalid EPUB file');
 	}
 
-	const workDir = join('data', 'works', work_id);
-	mkdirSync(workDir, { recursive: true });
+	// File writes + DB inserts wrapped together so any failure cleans
+	// up the on-disk artifacts AND prevents the half-written DB rows
+	// from referencing missing files. The transaction below rolls
+	// itself back on throw; the rmSync handles the filesystem half.
+	try {
+		mkdirSync(workDir, { recursive: true });
 
-	for (const ch of parsed.chapters) {
-		writeFileSync(join(workDir, chapterFilename(ch)), ch.html, 'utf8');
-	}
-
-	if (parsed.images.length > 0) {
-		const imagesDir = join(workDir, 'images');
-		mkdirSync(imagesDir, { recursive: true });
-		for (const img of parsed.images) {
-			writeFileSync(join(imagesDir, img.filename), img.buffer);
+		for (const ch of parsed.chapters) {
+			writeFileSync(join(workDir, chapterFilename(ch)), ch.html, 'utf8');
 		}
+
+		if (parsed.images.length > 0) {
+			const imagesDir = join(workDir, 'images');
+			mkdirSync(imagesDir, { recursive: true });
+			for (const img of parsed.images) {
+				writeFileSync(join(imagesDir, img.filename), img.buffer);
+			}
+		}
+	} catch (e) {
+		console.error('[upload] write failed:', e instanceof Error ? e.message : e);
+		cleanupWorkDir();
+		throw error(500, 'Failed to write work files');
 	}
 
 	const db = getDb();
@@ -95,30 +130,39 @@ export const POST: RequestHandler = async ({ request }) => {
 		`INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)`
 	);
 
-	db.transaction(() => {
-		insertWork.run(
-			work_id,
-			parsed.title,
-			parsed.author,
-			parsed.summary,
-			parsed.chapterCount,
-			null
-		);
-		for (const ch of parsed.chapters) {
-			insertChapter.run(
-				randomUUID(),
+	// DB writes wrapped so a transaction failure also rolls back the
+	// on-disk artifacts we just wrote — otherwise we'd have orphan
+	// chapter HTML referenced by no DB row.
+	try {
+		db.transaction(() => {
+			insertWork.run(
 				work_id,
-				ch.number,
-				ch.title,
-				join(workDir, chapterFilename(ch)),
-				ch.kind
+				parsed.title,
+				parsed.author,
+				parsed.summary,
+				parsed.chapterCount,
+				null
 			);
-		}
-		for (const tag of parsed.tags) {
-			const row = upsertTag.get(tag.category, tag.name);
-			if (row) linkWorkTag.run(work_id, row.id);
-		}
-	})();
+			for (const ch of parsed.chapters) {
+				insertChapter.run(
+					randomUUID(),
+					work_id,
+					ch.number,
+					ch.title,
+					join(workDir, chapterFilename(ch)),
+					ch.kind
+				);
+			}
+			for (const tag of parsed.tags) {
+				const row = upsertTag.get(tag.category, tag.name);
+				if (row) linkWorkTag.run(work_id, row.id);
+			}
+		})();
+	} catch (e) {
+		console.error('[upload] DB write failed:', e instanceof Error ? e.message : e);
+		cleanupWorkDir();
+		throw error(500, 'Failed to record work');
+	}
 
 	return json({ work_id });
 };

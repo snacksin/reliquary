@@ -252,6 +252,40 @@ export function extractPrefaceTags(html: string): ParsedTag[] {
  * basename so the URL matches what we wrote to disk
  * (data/works/<id>/images/<basename>).
  */
+/**
+ * Race a promise against a hard timeout. epub2 has at least one known
+ * shape where an internal `String.replace` callback throws
+ * synchronously inside an EventEmitter handler (the
+ * `linkparts.shift is not a function` case on certain AO3 EPUBs).
+ * When that happens, the `await book.getChapterAsync(id)` for the
+ * affected spine item neither resolves nor rejects — it hangs
+ * forever, which hangs `parseEpub`, the upload endpoint, and the UI.
+ *
+ * Wrapping each epub2 call in this race guarantees the await
+ * eventually settles. 10 seconds is generous for a real
+ * extraction (in-memory ZIP reads complete in < 100 ms on healthy
+ * data) and short enough that a hung request fails fast.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			reject(new Error(`${label} timed out after ${ms}ms`));
+		}, ms);
+		promise.then(
+			(val) => {
+				clearTimeout(timer);
+				resolve(val);
+			},
+			(err) => {
+				clearTimeout(timer);
+				reject(err);
+			}
+		);
+	});
+}
+
+const EPUB_CALL_TIMEOUT_MS = 10_000;
+
 function rewriteImageSrcs(html: string, workId: string): string {
 	const re = new RegExp(
 		`(src|href)=(["'])${IMG_SENTINEL.replace(/\//g, '\\/')}([^"']+)`,
@@ -272,6 +306,27 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// paths in chapter HTML to use it. We post-process to the real
 		// serving URL after fetching each chapter.
 		const book = await EPub.createAsync(tmpPath, IMG_SENTINEL);
+
+		// Defensive listener for deferred error events. epub2's
+		// `createAsync` wraps the legacy EventEmitter-based EPub class
+		// with `once('end', resolve)` + `once('error', reject)`. If a
+		// SECOND 'error' event fires later (e.g., the internal stream
+		// pipeline throws after createAsync's promise has already
+		// resolved), Node's EventEmitter contract is "any 'error' event
+		// with no listener throws synchronously into the event loop"
+		// — which becomes an uncaughtException and crashes the process.
+		// Pinning a permanent listener swallows those deferred errors so
+		// the server stays up. The originating call still gets a clean
+		// rejection (from `await getChapterAsync(…)` etc.) and the
+		// upload endpoint surfaces a 400 to the client. The known
+		// `linkparts.shift is not a function` bug on certain locked-fic
+		// AO3 EPUBs takes this path.
+		(book as unknown as { on: (e: string, cb: (e: unknown) => void) => void }).on(
+			'error',
+			() => {
+				/* swallowed — see comment above */
+			}
+		);
 
 		const title = book.metadata.title?.trim() || 'Untitled';
 		const author = book.metadata.creator?.trim() || 'Unknown';
@@ -304,7 +359,24 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			const f = flow[i];
 			if (!f.id) continue;
 			const kind = kinds[i];
-			const rawHtml = await book.getChapterAsync(f.id);
+
+			// Each chapter fetch is raced against a timeout AND wrapped in
+			// try/catch. If the chapter HTML can't be extracted for any
+			// reason — sync throw inside epub2, deferred error event, or a
+			// hang — the whole parse rejects with a clean error rather
+			// than silently dropping the chapter (which would produce a
+			// half-imported fic) or hanging forever.
+			let rawHtml: string;
+			try {
+				rawHtml = await withTimeout(
+					book.getChapterAsync(f.id),
+					EPUB_CALL_TIMEOUT_MS,
+					`getChapterAsync(${f.id})`
+				);
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				throw new Error(`chapter extraction failed at spine index ${i} (${f.href ?? f.id}): ${msg}`);
+			}
 			const html = rewriteImageSrcs(rawHtml, workId);
 
 			let number: number;
@@ -349,11 +421,18 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			if (!filename || seen.has(filename)) continue;
 			seen.add(filename);
 			try {
-				const [buf, mediaType] = await book.getImageAsync(entry.id);
+				const [buf, mediaType] = await withTimeout<[Buffer, string]>(
+					book.getImageAsync(entry.id) as Promise<[Buffer, string]>,
+					EPUB_CALL_TIMEOUT_MS,
+					`getImageAsync(${entry.id})`
+				);
 				images.push({ filename, buffer: buf, mediaType });
 			} catch {
-				// Some EPUBs reference images that aren't actually packaged.
-				// Skip rather than fail the whole upload.
+				// Some EPUBs reference images that aren't actually packaged,
+				// and some epub2-internal extraction paths can hang or throw
+				// the same way the chapter path does. Skip rather than fail
+				// the whole upload — a missing image is a missing image, not
+				// a missing fic.
 			}
 		}
 
