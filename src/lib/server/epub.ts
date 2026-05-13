@@ -273,6 +273,27 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// serving URL after fetching each chapter.
 		const book = await EPub.createAsync(tmpPath, IMG_SENTINEL);
 
+		// Defensive listener for deferred error events. epub2's
+		// `createAsync` wraps the legacy EventEmitter-based EPub class
+		// with `once('end', resolve)` + `once('error', reject)`. If a
+		// SECOND 'error' event fires later (e.g., the internal stream
+		// pipeline throws after createAsync's promise has already
+		// resolved), Node's EventEmitter contract is "any 'error' event
+		// with no listener throws synchronously into the event loop"
+		// — which becomes an uncaughtException and crashes the process.
+		// Pinning a permanent listener swallows those deferred errors so
+		// the server stays up. The originating call still gets a clean
+		// rejection (from `await getChapterAsync(…)` etc.) and the
+		// upload endpoint surfaces a 400 to the client. The known
+		// `linkparts.shift is not a function` bug on certain locked-fic
+		// AO3 EPUBs takes this path.
+		(book as unknown as { on: (e: string, cb: (e: unknown) => void) => void }).on(
+			'error',
+			() => {
+				/* swallowed — see comment above */
+			}
+		);
+
 		const title = book.metadata.title?.trim() || 'Untitled';
 		const author = book.metadata.creator?.trim() || 'Unknown';
 		const summary = book.metadata.description?.trim() || null;
