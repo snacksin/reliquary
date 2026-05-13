@@ -1,5 +1,5 @@
 import type { PageLoad } from './$types';
-import { listWorks, getTags, type TagCategory } from '$lib/api';
+import { listWorks, listAllWorks, getTags, type TagCategory } from '$lib/api';
 
 /**
  * Parse the `tags` query param (comma-separated tag IDs). Same shape as
@@ -43,29 +43,53 @@ function parseMatchAll(raw: string | null): TagCategory[] {
 	return [...cats];
 }
 
+const ALLOWED_PER_PAGE = new Set([10, 12, 15]);
+const DEFAULT_PER_PAGE = 12;
+
+function parsePage(raw: string | null): number {
+	if (!raw) return 1;
+	const n = Number.parseInt(raw, 10);
+	return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+function parsePerPage(raw: string | null): number {
+	if (!raw) return DEFAULT_PER_PAGE;
+	const n = Number.parseInt(raw, 10);
+	return ALLOWED_PER_PAGE.has(n) ? n : DEFAULT_PER_PAGE;
+}
+
 export const load: PageLoad = async ({ fetch, url }) => {
 	const selectedTagIds = parseTagIds(url.searchParams.get('tags'));
 	const matchAllCategories = parseMatchAll(url.searchParams.get('match_all'));
+	const page = parsePage(url.searchParams.get('page'));
+	const perPage = parsePerPage(url.searchParams.get('per_page'));
 
 	// Three fetches, parallelized:
 	//   - getTags(): drives the right-column filter sidebar
-	//   - listWorks(): unfiltered, drives Continue Reading + Favorites
+	//   - listAllWorks(): unfiltered, drives Continue Reading + Favorites
 	//     (those lists must surface in-progress / favorited works
-	//     regardless of the current tag filter)
-	//   - listWorks({ tags, matchAll }): server-filtered, drives the
-	//     middle column. Only fired when there's an actual filter;
-	//     otherwise we reuse the unfiltered result. `matchAll` is
-	//     forwarded even when only a subset of selected categories
-	//     uses it — the server filter applies the per-category mode
-	//     correctly via the required_per_cat CTE.
-	const [tagGroups, allWorks, maybeFiltered] = await Promise.all([
+	//     regardless of the current tag filter, and the *full* set must
+	//     be available client-side to derive the subsets).
+	//   - listWorks({ tags, matchAll, page, perPage }): server-filtered
+	//     + server-paginated, drives the middle column.
+	const [tagGroups, allWorks, filteredPage] = await Promise.all([
 		getTags(fetch),
-		listWorks(fetch),
-		selectedTagIds.length > 0
-			? listWorks(fetch, { tags: selectedTagIds, matchAll: matchAllCategories })
-			: Promise.resolve(null)
+		listAllWorks(fetch),
+		listWorks(fetch, {
+			tags: selectedTagIds,
+			matchAll: matchAllCategories,
+			page,
+			perPage
+		})
 	]);
 
-	const filteredWorks = maybeFiltered ?? allWorks;
-	return { works: allWorks, filteredWorks, tagGroups, selectedTagIds, matchAllCategories };
+	return {
+		works: allWorks,
+		filteredPage,
+		tagGroups,
+		selectedTagIds,
+		matchAllCategories,
+		page: filteredPage.page,
+		perPage: filteredPage.per_page
+	};
 };

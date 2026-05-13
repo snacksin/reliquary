@@ -1,9 +1,15 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { page as pageState } from '$app/state';
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
+	import Pagination from '$lib/Pagination.svelte';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
+
+	const PER_PAGE_OPTIONS = [10, 12, 15] as const;
+	const PER_PAGE_DEFAULT = 12;
+	const PER_PAGE_STORAGE_KEY = 'prefs:library:per_page';
 
 	let { data }: PageProps = $props();
 	let fileInput: HTMLInputElement | undefined = $state();
@@ -87,6 +93,48 @@
 			errorMessage = err instanceof Error ? err.message : 'Remove failed';
 		}
 	}
+
+	/**
+	 * Per-page picker. The URL is the runtime source of truth (so SSR
+	 * renders the right slice and bookmarks are exact); localStorage
+	 * records the user's most recent choice so a fresh visit to a bare
+	 * URL gets auto-aligned to their preference.
+	 *
+	 * On change, the picker writes both stores and resets `page` to 1
+	 * (a larger page size at a deep page index could leave the URL
+	 * past the new total — server clamps, but starting at page 1 is
+	 * the predictable UX). On initial mount, if the URL has no
+	 * `per_page` and the user's stored preference is non-default, we
+	 * silently `replaceState` to add the param. Brief flash from
+	 * default-12 to stored-15 is acceptable at single-user scale.
+	 */
+	function pushPerPage(next: number) {
+		if (typeof window !== 'undefined') {
+			localStorage.setItem(PER_PAGE_STORAGE_KEY, String(next));
+		}
+		const params = new URLSearchParams(pageState.url.searchParams);
+		if (next === PER_PAGE_DEFAULT) params.delete('per_page');
+		else params.set('per_page', String(next));
+		params.delete('page');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
+	let perPageSyncDone = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined' || perPageSyncDone) return;
+		perPageSyncDone = true;
+		const urlPerPage = pageState.url.searchParams.get('per_page');
+		if (urlPerPage) return; // URL wins — already aligned
+		const stored = localStorage.getItem(PER_PAGE_STORAGE_KEY);
+		if (!stored) return;
+		const n = Number.parseInt(stored, 10);
+		if (!PER_PAGE_OPTIONS.includes(n as (typeof PER_PAGE_OPTIONS)[number])) return;
+		if (n === PER_PAGE_DEFAULT) return;
+		const params = new URLSearchParams(pageState.url.searchParams);
+		params.set('per_page', String(n));
+		goto(`?${params.toString()}`, { replaceState: true, keepFocus: true, noScroll: true });
+	});
 </script>
 
 <svelte:head><title>Reliquary (POC)</title></svelte:head>
@@ -161,27 +209,42 @@
 	</aside>
 
 	<section class="middle-col" aria-label="Library">
-		<h2 class="middle-heading">
-			Library
-			{#if data.works.length > 0}
-				<span class="middle-count">
-					{#if data.selectedTagIds.length > 0}
-						{data.filteredWorks.length} of {data.works.length} work{data.works.length === 1
-							? ''
-							: 's'}
-					{:else}
-						{data.works.length} work{data.works.length === 1 ? '' : 's'}
-					{/if}
-				</span>
+		<header class="middle-header">
+			<h2 class="middle-heading">
+				Library
+				{#if data.works.length > 0}
+					<span class="middle-count">
+						{#if data.selectedTagIds.length > 0}
+							{data.filteredPage.total} of {data.works.length} work{data.works.length === 1
+								? ''
+								: 's'}
+						{:else}
+							{data.filteredPage.total} work{data.filteredPage.total === 1 ? '' : 's'}
+						{/if}
+					</span>
+				{/if}
+			</h2>
+			{#if data.filteredPage.total > 0}
+				<label class="per-page-picker">
+					<span class="per-page-label">Per page</span>
+					<select
+						value={data.perPage}
+						onchange={(e) => pushPerPage(Number((e.target as HTMLSelectElement).value))}
+					>
+						{#each PER_PAGE_OPTIONS as opt (opt)}
+							<option value={opt}>{opt}</option>
+						{/each}
+					</select>
+				</label>
 			{/if}
-		</h2>
+		</header>
 		{#if data.works.length === 0}
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
-		{:else if data.filteredWorks.length === 0}
+		{:else if data.filteredPage.total === 0}
 			<p class="empty">No works match the current filters.</p>
 		{:else}
 			<ul class="works">
-				{#each data.filteredWorks as work (work.id)}
+				{#each data.filteredPage.works as work (work.id)}
 					<li>
 						<a href="/works/{work.id}" class="library-row">
 							<div class="cover-slot" aria-hidden="true">
@@ -209,6 +272,7 @@
 					</li>
 				{/each}
 			</ul>
+			<Pagination page={data.filteredPage.page} totalPages={data.filteredPage.total_pages} />
 		{/if}
 	</section>
 
@@ -308,12 +372,47 @@
 		display: flex;
 		align-items: baseline;
 		gap: 0.6rem;
+		margin: 0;
 	}
 	.middle-count {
 		font-weight: 400;
 		text-transform: none;
 		letter-spacing: normal;
 		font-size: 0.85em;
+	}
+	/* Middle column header bar: title + count on the left, per-page
+	   picker on the right. The picker only renders when the filter
+	   result is non-empty — it'd be inert on a 0-results page. */
+	.middle-header {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+		margin: 0 0 0.75rem;
+	}
+	.middle-header .middle-heading {
+		flex: 1 1 auto;
+		margin: 0;
+	}
+	.per-page-picker {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+		flex: 0 0 auto;
+	}
+	.per-page-picker select {
+		font: inherit;
+		text-transform: none;
+		letter-spacing: normal;
+		padding: 2px 4px;
+		border: 1px solid var(--reader-border);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--reader-fg);
+		cursor: pointer;
 	}
 
 	/* Left-column compact rows: small cover thumbnail (60×90) on the
