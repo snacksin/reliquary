@@ -47,8 +47,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		parsed = await parseEpub(buffer, work_id);
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : 'unknown error';
-		throw error(400, `invalid EPUB: ${msg}`);
+		// Log the real failure for debugging — but ship a generic 400
+		// to the client. The raw error.message from epub2 often leaks
+		// the OS temp-path (e.g., "Invalid/missing file
+		// /var/folders/.../reliquary-epub-{uuid}.epub") which is both
+		// unhelpful UX and minor info-leak ahead of M2.2's LAN
+		// exposure. See TRACKING.md working-notes for the standing
+		// error-message hygiene rule.
+		console.error('[upload] EPUB parse failed:', e instanceof Error ? e.message : e);
+		throw error(400, 'Invalid EPUB file');
 	}
 
 	const workDir = join('data', 'works', work_id);
