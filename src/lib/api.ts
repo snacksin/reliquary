@@ -29,29 +29,65 @@ export type Work = {
 type Fetch = typeof fetch;
 
 /**
- * Fetch the library list.
- *
- * - With no `tags`, returns every work.
- * - With `tags`, returns the filtered subset. Per-category mode is OR
- *   by default; pass `matchAll: ['fandom', ...]` to switch those
- *   categories to AND-within (every selected tag in that category must
- *   be present on the work). AND-across-categories always applies.
- *
- * See `/api/works` for the full filter semantics.
+ * Paginated response shape from `GET /api/works` when the
+ * `paginate=false` flag is absent (the default).
  */
-export async function listWorks(
-	fetch: Fetch,
-	opts?: { tags?: number[]; matchAll?: string[] }
-): Promise<Work[]> {
+export type WorksPage = {
+	works: Work[];
+	page: number;
+	per_page: number;
+	total: number;
+	total_pages: number;
+};
+
+type ListOpts = {
+	tags?: number[];
+	matchAll?: string[];
+	page?: number;
+	perPage?: number;
+};
+
+function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	const search = new URLSearchParams();
-	if (opts?.tags && opts.tags.length > 0) {
-		search.set('tags', opts.tags.join(','));
-	}
+	if (opts?.tags && opts.tags.length > 0) search.set('tags', opts.tags.join(','));
 	if (opts?.matchAll && opts.matchAll.length > 0) {
 		search.set('match_all', opts.matchAll.join(','));
 	}
+	if (opts?.page && opts.page > 1) search.set('page', String(opts.page));
+	if (opts?.perPage) search.set('per_page', String(opts.perPage));
+	return search;
+}
+
+/**
+ * Fetch the library as a paginated page. See `/api/works` for the full
+ * filter + pagination semantics.
+ *
+ * - `tags` / `matchAll`: filter narrowing per Step 5 / 5.5.
+ * - `page` (default 1) and `perPage` (default 12) drive the slice.
+ *   Server clamps `page` to the actual range, so a stale URL after a
+ *   delete falls back to the last page instead of 404'ing.
+ */
+export async function listWorks(fetch: Fetch, opts?: ListOpts): Promise<WorksPage> {
+	const search = buildListParams(opts);
 	const query = search.toString();
 	const res = await fetch(`/api/works${query ? '?' + query : ''}`);
+	if (!res.ok) throw new Error(`GET /api/works failed: ${res.status}`);
+	return res.json();
+}
+
+/**
+ * Fetch the full library as a flat array (no pagination). Used by the
+ * library page's Continue Reading + Favorites sections, which derive
+ * their subsets from the full set client-side and can't be sliced to
+ * a single page. Pass `tags` / `matchAll` to filter at the source if
+ * needed — but the library page deliberately fetches this unfiltered
+ * so CR + Favs surface in-progress / favorited fics regardless of
+ * the current tag filter.
+ */
+export async function listAllWorks(fetch: Fetch, opts?: ListOpts): Promise<Work[]> {
+	const search = buildListParams(opts);
+	search.set('paginate', 'false');
+	const res = await fetch(`/api/works?${search.toString()}`);
 	if (!res.ok) throw new Error(`GET /api/works failed: ${res.status}`);
 	return res.json();
 }

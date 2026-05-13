@@ -85,6 +85,11 @@
 	 * both params on `page.url`. Empty lists drop the param. All
 	 * toggle handlers route through this to keep the URL the single
 	 * source of truth.
+	 *
+	 * Filter changes ALWAYS reset pagination to page 1 — a filter that
+	 * shrinks the result set could leave the user on a page that no
+	 * longer exists (the server clamps but the URL would be lying),
+	 * and a filter that grows it should always re-anchor at the top.
 	 */
 	function pushFilterState(nextTags: number[], nextMatchAll: TagCategory[]) {
 		const params = new URLSearchParams(page.url.searchParams);
@@ -92,6 +97,7 @@
 		else params.delete('tags');
 		if (nextMatchAll.length > 0) params.set('match_all', nextMatchAll.join(','));
 		else params.delete('match_all');
+		params.delete('page');
 		const qs = params.toString();
 		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
 	}
