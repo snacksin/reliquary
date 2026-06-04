@@ -14,6 +14,17 @@ import { getDb } from '$lib/server/db';
  * in the DB yet (Step 2 enforces this structurally), and even if they
  * did, surfacing them belongs to a later milestone — the M3+ user-tag
  * UI builds its own surface rather than piggybacking on this endpoint.
+ *
+ * **M2.1.5 — show-wins hide semantics.** By default this endpoint
+ * excludes any tag where every one of its `tag_aliases` rows (treating
+ * the tag as `alias_tag_id`) has `hide_from_sidebar = 1`. If at least
+ * one parent says show — or if the tag has no parent-alias rows — it
+ * stays visible.
+ *
+ * **`?include_hidden=true`** — the `/tags` management page needs to
+ * see hidden tags so the user can un-hide them. In this mode every
+ * tag is returned and each row carries a computed `hidden_from_sidebar`
+ * boolean so the UI can render the visual difference.
  */
 
 type Row = {
@@ -21,6 +32,7 @@ type Row = {
 	category: string;
 	name: string;
 	count: number;
+	hidden_from_sidebar: number;
 };
 
 type Category =
@@ -32,31 +44,50 @@ type Category =
 	| 'character'
 	| 'freeform';
 
-export const GET: RequestHandler = () => {
+type OutTag = {
+	id: number;
+	name: string;
+	count: number;
+	hidden_from_sidebar?: boolean;
+};
+
+export const GET: RequestHandler = ({ url }) => {
 	const db = getDb();
+	const includeHidden = url.searchParams.get('include_hidden') === 'true';
 
-	// LEFT JOIN so a tag with no current uses (e.g. a future migration
-	// that pre-seeds tags) still shows up with count=0 instead of
-	// silently disappearing. Today every tag is created in lockstep
-	// with at least one work_tags row, so count is always >= 1 in
-	// practice, but the LEFT JOIN keeps the contract truthful.
+	// Same `hidden_from_sidebar` predicate in both modes — defined once
+	// here so the WHERE clause and the SELECT'd column can't drift.
 	//
-	// Defensive `category != 'personal'` filter — the type-level rules
-	// in src/lib/server/epub.ts already prevent personal rows from
-	// being written, but a SQL filter here means even a hand-edited
-	// DB row couldn't leak personal tags through the API.
-	const rows = db
-		.prepare(
-			`SELECT t.id, t.category, t.name, COUNT(wt.work_id) AS count
-			 FROM tags t
-			 LEFT JOIN work_tags wt ON wt.tag_id = t.id
-			 WHERE t.category != 'personal'
-			 GROUP BY t.id
-			 ORDER BY t.category ASC, count DESC, t.name ASC`
+	// Show-wins shape (English): a tag is hidden iff EVERY parent-alias
+	// row has hide=1. Equivalently, a tag is visible iff it has no
+	// parent-alias rows OR at least one parent-alias row with hide=0.
+	// The SELECT'd expression flips that for the management view's
+	// `hidden_from_sidebar` flag.
+	const hiddenExpr = `(
+		EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.alias_tag_id = t.id)
+		AND NOT EXISTS (
+			SELECT 1 FROM tag_aliases ta
+			WHERE ta.alias_tag_id = t.id AND ta.hide_from_sidebar = 0
 		)
-		.all() as Row[];
+	)`;
 
-	const groups: Record<Category, { id: number; name: string; count: number }[]> = {
+	const whereClauses = [`t.category != 'personal'`];
+	if (!includeHidden) {
+		whereClauses.push(`NOT ${hiddenExpr}`);
+	}
+
+	const sql = `
+		SELECT t.id, t.category, t.name, COUNT(wt.work_id) AS count,
+		       ${hiddenExpr} AS hidden_from_sidebar
+		 FROM tags t
+		 LEFT JOIN work_tags wt ON wt.tag_id = t.id
+		 WHERE ${whereClauses.join(' AND ')}
+		 GROUP BY t.id
+		 ORDER BY t.category ASC, count DESC, t.name ASC`;
+
+	const rows = db.prepare(sql).all() as Row[];
+
+	const groups: Record<Category, OutTag[]> = {
 		rating: [],
 		warning: [],
 		category: [],
@@ -67,11 +98,10 @@ export const GET: RequestHandler = () => {
 	};
 
 	for (const r of rows) {
-		// Reject any unexpected category value (shouldn't happen given
-		// Step 2's allow-list, but keeps the response shape stable if
-		// future code somehow inserts an unknown category).
 		if (r.category in groups) {
-			groups[r.category as Category].push({ id: r.id, name: r.name, count: r.count });
+			const out: OutTag = { id: r.id, name: r.name, count: r.count };
+			if (includeHidden) out.hidden_from_sidebar = r.hidden_from_sidebar === 1;
+			groups[r.category as Category].push(out);
 		}
 	}
 

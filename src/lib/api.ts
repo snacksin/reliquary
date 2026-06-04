@@ -191,6 +191,12 @@ export type Tag = {
 	id: number;
 	name: string;
 	count: number;
+	/**
+	 * Only present when `getTags({ includeHidden: true })` — the
+	 * default sidebar feed (without `include_hidden=true`) already
+	 * filters hidden tags out, so the flag isn't carried.
+	 */
+	hidden_from_sidebar?: boolean;
 };
 
 /**
@@ -200,10 +206,91 @@ export type Tag = {
  */
 export type TagGroups = Record<TagCategory, Tag[]>;
 
-export async function getTags(fetch: Fetch): Promise<TagGroups> {
-	const res = await fetch('/api/tags');
+export async function getTags(
+	fetch: Fetch,
+	opts?: { includeHidden?: boolean }
+): Promise<TagGroups> {
+	const url = opts?.includeHidden ? '/api/tags?include_hidden=true' : '/api/tags';
+	const res = await fetch(url);
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+/**
+ * Per-edge alias info, returned by `GET /api/tags/<parent_id>/aliases`
+ * alongside the parent metadata.
+ */
+export type TagAlias = {
+	id: number;
+	name: string;
+	category: TagCategory;
+	hide_from_sidebar: number;
+};
+
+export type TagAliasList = {
+	parent: { id: number; category: TagCategory; name: string };
+	aliases: TagAlias[];
+};
+
+export async function getTagAliases(parentId: number, fetch: Fetch): Promise<TagAliasList> {
+	const res = await fetch(`/api/tags/${parentId}/aliases`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * One flat list of every alias edge in the DB. Used by the /tags page
+ * to render the whole tree in one fetch instead of one round trip per
+ * tag.
+ */
+export type TagAliasEdge = {
+	parent_tag_id: number;
+	alias_tag_id: number;
+	hide_from_sidebar: number;
+};
+
+export async function getAllTagAliasEdges(fetch: Fetch): Promise<TagAliasEdge[]> {
+	const res = await fetch('/api/tag-aliases');
+	if (!res.ok) throw new Error(await extractError(res));
+	const body = (await res.json()) as { edges: TagAliasEdge[] };
+	return body.edges;
+}
+
+export async function addTagAlias(
+	parentId: number,
+	aliasId: number,
+	hideFromSidebar: boolean,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/tags/${parentId}/aliases`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ alias_tag_id: aliasId, hide_from_sidebar: hideFromSidebar })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function setTagAliasHidden(
+	parentId: number,
+	aliasId: number,
+	hide: boolean,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/tags/${parentId}/aliases/${aliasId}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ hide_from_sidebar: hide })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function removeTagAlias(
+	parentId: number,
+	aliasId: number,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/tags/${parentId}/aliases/${aliasId}`, { method: 'DELETE' });
+	if (!res.ok && res.status !== 204) throw new Error(await extractError(res));
 }
 
 async function extractError(res: Response): Promise<string> {
