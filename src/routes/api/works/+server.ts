@@ -148,31 +148,71 @@ const SELECT_COLUMNS = `
 /**
  * SQL fragment for the tag filter, written as a `w.id IN (…)` clause
  * so it AND-composes with other clauses (e.g., the FTS search) without
- * special handling. Uses the same CTE pipeline introduced in Step 5.5
- * (OR-within / AND-within per category, AND-across categories) —
- * verbatim, just lifted out of the inline GET handler so the
- * additive WHERE-builder below can stitch it in.
+ * special handling. Extends the Step 5.5 CTE pipeline (OR-within /
+ * AND-within per category, AND-across categories) with M2.1.5's
+ * **transitive alias expansion via WITH RECURSIVE**.
+ *
+ * Mental model: each user-selected tag is a "slot". Each slot expands
+ * via the alias tree into a set of acceptable matches. A work satisfies
+ * a slot iff it has at least one tag in that slot's expansion.
+ *
+ *   selected_tags     — base set of user-picked IDs, with `key` from
+ *                       json_each used as the slot id (deduped at the
+ *                       URL-parsing layer so slots are 1:1 with picks).
+ *   filter_tags       — recursive expansion: a slot's set is the slot
+ *                       itself plus every descendant via tag_aliases.
+ *                       `UNION` (not `UNION ALL`) deduplicates and
+ *                       short-circuits if a cycle ever slips past the
+ *                       API-layer cycle check.
+ *   match_all_cats    — categories where the user opted into AND-within
+ *                       semantics.
+ *   required_per_cat  — derived from the *original* selection (not the
+ *                       expansion): "how many distinct slots in this
+ *                       category must be satisfied". AND-within →
+ *                       count distinct slots in that category; OR-
+ *                       within → 1.
+ *   work_matches      — per (work, category), how many distinct SLOTS
+ *                       does the work satisfy. A work tag satisfies a
+ *                       slot iff the tag's id is in that slot's
+ *                       expansion. Counting slots (not raw tag ids)
+ *                       is what makes "all slots filled" work correctly
+ *                       under match_all: a work tagged with Batman +
+ *                       Robin under user-pick {Batman, Superman}
+ *                       satisfies only slot 1, not both.
+ *
+ * Without any aliases configured, the expansion is a no-op and the
+ * slot count equals the original tag count — so this reduces exactly
+ * to Step 5.5's pipeline.
  */
 const TAG_FILTER_CLAUSE = `w.id IN (
-  WITH
-    filter_tags AS (SELECT value AS tag_id FROM json_each(?)),
+  WITH RECURSIVE
+    selected_tags(slot_id, tag_id) AS (
+      SELECT key, value FROM json_each(?)
+    ),
+    filter_tags(slot_id, tag_id) AS (
+      SELECT slot_id, tag_id FROM selected_tags
+      UNION
+      SELECT ft.slot_id, ta.alias_tag_id
+      FROM tag_aliases ta
+      JOIN filter_tags ft ON ta.parent_tag_id = ft.tag_id
+    ),
     match_all_cats AS (SELECT value AS category FROM json_each(?)),
     required_per_cat AS (
       SELECT t.category,
         CASE WHEN t.category IN (SELECT category FROM match_all_cats)
-          THEN COUNT(*)
+          THEN COUNT(DISTINCT st.slot_id)
           ELSE 1
         END AS required
-      FROM filter_tags ft
-      JOIN tags t ON t.id = ft.tag_id
+      FROM selected_tags st
+      JOIN tags t ON t.id = st.tag_id
       GROUP BY t.category
     ),
     work_matches AS (
       SELECT wt.work_id, t.category,
-             COUNT(DISTINCT wt.tag_id) AS matched
+             COUNT(DISTINCT ft.slot_id) AS matched
       FROM work_tags wt
       JOIN tags t ON t.id = wt.tag_id
-      WHERE wt.tag_id IN (SELECT tag_id FROM filter_tags)
+      JOIN filter_tags ft ON ft.tag_id = wt.tag_id
       GROUP BY wt.work_id, t.category
     )
   SELECT wm.work_id

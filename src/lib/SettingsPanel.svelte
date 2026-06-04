@@ -134,6 +134,16 @@
 					{/each}
 				</select>
 			</fieldset>
+
+			<!--
+				M2.1.5: link to the tag-alias management page. Sits at the
+				bottom of the panel because it navigates away rather than
+				flipping a per-device setting — it's a "go somewhere" action,
+				not a "change something here" one.
+			-->
+			<nav class="panel-nav">
+				<a href="/tags" onclick={() => (open = false)}>Manage tags →</a>
+			</nav>
 		</form>
 	</div>
 {/if}
@@ -214,5 +224,19 @@
 		border: 1px solid var(--reader-border);
 		border-radius: 4px;
 		cursor: pointer;
+	}
+	.panel-nav {
+		margin-top: 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--reader-border);
+		text-align: right;
+	}
+	.panel-nav a {
+		color: var(--reader-link);
+		text-decoration: none;
+		font-size: 0.85rem;
+	}
+	.panel-nav a:hover {
+		text-decoration: underline;
 	}
 </style>
