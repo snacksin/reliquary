@@ -1,14 +1,20 @@
 import type { PageLoad } from './$types';
-import { getTags } from '$lib/api';
+import { getAllTagAliasEdges, getTags } from '$lib/api';
 
 /**
- * The /tags management page wants to see hidden tags so the user can
- * un-hide them — `include_hidden=true` plus the boolean each tag carries.
- * Two parallel fetches aren't needed here; the alias-edge lists for each
- * tag are loaded on demand when the user expands a tag card (keeps the
- * initial payload small even for libraries with a few hundred tags).
+ * The /tags management page wants:
+ *   - every tag (including ones hidden from the sidebar), so the user
+ *     can un-hide them — `?include_hidden=true` on getTags
+ *   - every alias edge in one shot, so the tree renders without a
+ *     round trip per tag — the new /api/tag-aliases endpoint
+ *
+ * Both fetches in parallel; the page builds parent / child maps from
+ * the edges client-side and renders the tree per category.
  */
 export const load: PageLoad = async ({ fetch }) => {
-	const tagGroups = await getTags(fetch, { includeHidden: true });
-	return { tagGroups };
+	const [tagGroups, edges] = await Promise.all([
+		getTags(fetch, { includeHidden: true }),
+		getAllTagAliasEdges(fetch)
+	]);
+	return { tagGroups, edges };
 };

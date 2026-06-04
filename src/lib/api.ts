@@ -238,6 +238,24 @@ export async function getTagAliases(parentId: number, fetch: Fetch): Promise<Tag
 	return res.json();
 }
 
+/**
+ * One flat list of every alias edge in the DB. Used by the /tags page
+ * to render the whole tree in one fetch instead of one round trip per
+ * tag.
+ */
+export type TagAliasEdge = {
+	parent_tag_id: number;
+	alias_tag_id: number;
+	hide_from_sidebar: number;
+};
+
+export async function getAllTagAliasEdges(fetch: Fetch): Promise<TagAliasEdge[]> {
+	const res = await fetch('/api/tag-aliases');
+	if (!res.ok) throw new Error(await extractError(res));
+	const body = (await res.json()) as { edges: TagAliasEdge[] };
+	return body.edges;
+}
+
 export async function addTagAlias(
 	parentId: number,
 	aliasId: number,
