@@ -63,21 +63,26 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	const matchAllCategories = parseMatchAll(url.searchParams.get('match_all'));
 	const page = parsePage(url.searchParams.get('page'));
 	const perPage = parsePerPage(url.searchParams.get('per_page'));
+	// Forward `q` verbatim — server sanitizes for FTS5. We keep the
+	// raw value here so the SearchInput renders what the user typed.
+	const q = url.searchParams.get('q') ?? '';
 
 	// Three fetches, parallelized:
 	//   - getTags(): drives the right-column filter sidebar
 	//   - listAllWorks(): unfiltered, drives Continue Reading + Favorites
 	//     (those lists must surface in-progress / favorited works
-	//     regardless of the current tag filter, and the *full* set must
-	//     be available client-side to derive the subsets).
-	//   - listWorks({ tags, matchAll, page, perPage }): server-filtered
-	//     + server-paginated, drives the middle column.
+	//     regardless of the current tag filter or search query, and
+	//     the *full* set must be available client-side to derive the
+	//     subsets).
+	//   - listWorks({ tags, matchAll, q, page, perPage }): server-
+	//     filtered + searched + paginated, drives the middle column.
 	const [tagGroups, allWorks, filteredPage] = await Promise.all([
 		getTags(fetch),
 		listAllWorks(fetch),
 		listWorks(fetch, {
 			tags: selectedTagIds,
 			matchAll: matchAllCategories,
+			q,
 			page,
 			perPage
 		})
@@ -89,6 +94,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		tagGroups,
 		selectedTagIds,
 		matchAllCategories,
+		q,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page
 	};

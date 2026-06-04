@@ -4,6 +4,7 @@
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
+	import SearchInput from '$lib/SearchInput.svelte';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -214,7 +215,7 @@
 				Library
 				{#if data.works.length > 0}
 					<span class="middle-count">
-						{#if data.selectedTagIds.length > 0}
+						{#if data.selectedTagIds.length > 0 || data.q.trim().length > 0}
 							{data.filteredPage.total} of {data.works.length} work{data.works.length === 1
 								? ''
 								: 's'}
@@ -241,7 +242,15 @@
 		{#if data.works.length === 0}
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
 		{:else if data.filteredPage.total === 0}
-			<p class="empty">No works match the current filters.</p>
+			<p class="empty">
+				{#if data.q.trim().length > 0 && data.selectedTagIds.length > 0}
+					No works match your search and filters.
+				{:else if data.q.trim().length > 0}
+					No works match your search.
+				{:else}
+					No works match the current filters.
+				{/if}
+			</p>
 		{:else}
 			<ul class="works">
 				{#each data.filteredPage.works as work (work.id)}
@@ -277,6 +286,7 @@
 	</section>
 
 	<div class="right-col">
+		<SearchInput q={data.q} />
 		<FilterSidebar
 			tags={data.tagGroups}
 			selectedIds={data.selectedTagIds}

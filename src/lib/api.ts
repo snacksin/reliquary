@@ -45,6 +45,7 @@ type ListOpts = {
 	matchAll?: string[];
 	page?: number;
 	perPage?: number;
+	q?: string;
 };
 
 function buildListParams(opts: ListOpts | undefined): URLSearchParams {
@@ -55,6 +56,9 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	}
 	if (opts?.page && opts.page > 1) search.set('page', String(opts.page));
 	if (opts?.perPage) search.set('per_page', String(opts.perPage));
+	// `q` is forwarded raw — the server sanitizes for FTS5. Empty
+	// string means "no search filter" (same as omitting the param).
+	if (opts?.q && opts.q.trim()) search.set('q', opts.q);
 	return search;
 }
 
@@ -63,6 +67,9 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
  * filter + pagination semantics.
  *
  * - `tags` / `matchAll`: filter narrowing per Step 5 / 5.5.
+ * - `q`: full-text search across title/author/summary. Server
+ *   sanitizes the input for FTS5 (strips reserved characters,
+ *   prefix-matches each token). ANDs with the tag filter.
  * - `page` (default 1) and `perPage` (default 12) drive the slice.
  *   Server clamps `page` to the actual range, so a stale URL after a
  *   delete falls back to the last page instead of 404'ing.
