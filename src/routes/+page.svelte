@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page as pageState } from '$app/state';
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
+	import BulkUploadButton from '$lib/BulkUploadButton.svelte';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
 	import SearchInput from '$lib/SearchInput.svelte';
@@ -153,6 +154,7 @@
 			hidden
 			onchange={handleFileChange}
 		/>
+		<BulkUploadButton />
 		{#if errorMessage}
 			<p class="error">{errorMessage}</p>
 		{/if}
@@ -329,10 +331,20 @@
 		   right edge + a bit of breathing room) so the upload button
 		   never sits under it. */
 		padding-right: 72px;
+		/* Flex so the single + bulk upload buttons sit side-by-side
+		   with a small gap, and the progress / summary lines from
+		   BulkUploadButton (which are full-width grid-column children)
+		   wrap onto their own row below. */
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
 	}
 	.library-header h1 {
 		font-size: 1.6rem;
-		margin: 0 0 0.75rem;
+		margin: 0 0.75rem 0 0;
+		/* Title takes a whole row above the buttons. */
+		flex-basis: 100%;
 	}
 	.library-header .upload {
 		padding: 0.4rem 0.8rem;
