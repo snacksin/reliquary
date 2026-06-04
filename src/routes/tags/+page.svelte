@@ -195,7 +195,14 @@
 		dialogChildId = '';
 		dialogHide = false;
 		dialogError = null;
+		cbQuery = '';
+		cbOpen = false;
+		cbActiveIndex = 0;
 		dialog?.showModal();
+		// Defer the focus until the dialog has actually rendered. The
+		// combobox input is the entry point; opening with focus there
+		// matches the "search-as-you-type" affordance.
+		queueMicrotask(() => cbInputEl?.focus());
 	}
 
 	function closeDialog() {
@@ -204,22 +211,145 @@
 		dialogChildId = '';
 		dialogHide = false;
 		dialogError = null;
+		cbQuery = '';
+		cbOpen = false;
 	}
 
 	/**
 	 * Eligible children for the dialog: same category, not the parent
-	 * itself, not already a direct child. Sorted by usage count desc
-	 * to surface the heavy-hitter tags first (matches the FilterSidebar
-	 * sort).
+	 * itself, not already a direct child. Sorted **alphabetically by
+	 * name** (was count-DESC) — alphabetical is what users actually
+	 * reach for when typing into a search-style picker. The combobox
+	 * below does substring filtering on top, so sort just controls the
+	 * "before you've typed anything" ordering.
 	 */
 	const dialogEligible = $derived.by(() => {
 		if (!dialogParent) return [];
 		const existingChildren = new Set(
 			(childEdgesByParent.get(dialogParent.id) ?? []).map((e) => e.alias_tag_id)
 		);
-		return data.tagGroups[dialogParent.category].filter(
-			(t) => t.id !== dialogParent!.id && !existingChildren.has(t.id)
-		);
+		return data.tagGroups[dialogParent.category]
+			.filter((t) => t.id !== dialogParent!.id && !existingChildren.has(t.id))
+			.toSorted((a, b) => a.name.localeCompare(b.name));
+	});
+
+	// ─── Search-as-you-type combobox state ──────────────────────────
+	//
+	// Native <select> doesn't scale past ~50 options without becoming
+	// unscannable; fandoms in particular can easily reach 200+. The
+	// combobox below is a small bespoke implementation rather than a
+	// dependency: text input + filtered listbox + arrow-key
+	// navigation + click-outside-to-close. Aria roles follow the WAI
+	// "Editable Combobox With List Autocomplete" pattern.
+	//
+	// State resets on every dialog open (handled by openAddDialog).
+	let cbQuery = $state('');
+	let cbOpen = $state(false);
+	let cbActiveIndex = $state(0);
+	let cbInputEl = $state<HTMLInputElement | null>(null);
+	let cbListEl = $state<HTMLUListElement | null>(null);
+
+	const cbFiltered = $derived.by(() => {
+		const q = cbQuery.trim().toLowerCase();
+		if (!q) return dialogEligible;
+		return dialogEligible.filter((t) => t.name.toLowerCase().includes(q));
+	});
+
+	/**
+	 * The currently-selected child is stored as `dialogChildId` (the
+	 * id). The query string mirrors the chosen name so the field looks
+	 * settled after a pick, but typing further reopens the list and
+	 * clears the selection until the user picks again.
+	 */
+	function cbPick(tagId: number, tagName: string) {
+		dialogChildId = tagId;
+		cbQuery = tagName;
+		cbOpen = false;
+		cbActiveIndex = 0;
+	}
+
+	function cbOnInput(e: Event) {
+		cbQuery = (e.target as HTMLInputElement).value;
+		// Typing invalidates a previously-picked id; the user is
+		// re-searching. The submit button stays disabled until they
+		// pick again (or until cbQuery exactly matches one option).
+		dialogChildId = '';
+		cbActiveIndex = 0;
+		cbOpen = true;
+	}
+
+	function cbOnKeyDown(e: KeyboardEvent) {
+		const items = cbFiltered;
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			cbOpen = true;
+			cbActiveIndex = Math.min(cbActiveIndex + 1, items.length - 1);
+			scrollActiveIntoView();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			cbOpen = true;
+			cbActiveIndex = Math.max(cbActiveIndex - 1, 0);
+			scrollActiveIntoView();
+		} else if (e.key === 'Enter') {
+			if (cbOpen && items[cbActiveIndex]) {
+				e.preventDefault();
+				cbPick(items[cbActiveIndex].id, items[cbActiveIndex].name);
+			}
+			// Otherwise let the form's submit handler take over.
+		} else if (e.key === 'Escape') {
+			// Two-tier escape: first dismiss the listbox if it's open;
+			// only THEN let an Esc dismiss the dialog. Native `<dialog>`
+			// cancel-on-Esc is unreliable when an input child is focused
+			// inside a modal dialog (the browser routes the keydown to
+			// the focused element first), so close the dialog explicitly
+			// rather than relying on the cancel pathway.
+			e.preventDefault();
+			if (cbOpen) {
+				cbOpen = false;
+			} else if (dialog?.open) {
+				dialog.close();
+			}
+		} else if (e.key === 'Home') {
+			if (cbOpen) {
+				e.preventDefault();
+				cbActiveIndex = 0;
+				scrollActiveIntoView();
+			}
+		} else if (e.key === 'End') {
+			if (cbOpen) {
+				e.preventDefault();
+				cbActiveIndex = items.length - 1;
+				scrollActiveIntoView();
+			}
+		}
+	}
+
+	function scrollActiveIntoView() {
+		if (typeof window === 'undefined') return;
+		queueMicrotask(() => {
+			const li = cbListEl?.querySelector<HTMLLIElement>(`li[data-index="${cbActiveIndex}"]`);
+			li?.scrollIntoView({ block: 'nearest' });
+		});
+	}
+
+	/**
+	 * Close the listbox if the user clicks outside the combobox.
+	 * Bound via window-level mousedown so any click anywhere on the
+	 * page (including the dialog backdrop) settles the state.
+	 */
+	function cbOnWindowMouseDown(e: MouseEvent) {
+		if (!cbOpen) return;
+		const target = e.target as Node | null;
+		if (!target) return;
+		const wrapper = cbInputEl?.closest('.combobox');
+		if (wrapper && wrapper.contains(target)) return;
+		cbOpen = false;
+	}
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		window.addEventListener('mousedown', cbOnWindowMouseDown);
+		return () => window.removeEventListener('mousedown', cbOnWindowMouseDown);
 	});
 
 	async function handleDialogSubmit(e: SubmitEvent) {
@@ -372,15 +502,67 @@
 		<form onsubmit={handleDialogSubmit}>
 			<h2>Group a tag under <strong>{dialogParent.name}</strong></h2>
 
-			<label class="picker-label">
-				<span>Pick a {dialogParent.category} tag</span>
-				<select bind:value={dialogChildId} required>
-					<option value="" disabled selected>Choose one…</option>
-					{#each dialogEligible as eligible (eligible.id)}
-						<option value={eligible.id}>{eligible.name} ({eligible.count})</option>
-					{/each}
-				</select>
-			</label>
+			<div class="picker-label">
+				<label class="picker-text" for="combobox-input">
+					Pick a {dialogParent.category} tag
+				</label>
+				<div class="combobox">
+					<input
+						id="combobox-input"
+						bind:this={cbInputEl}
+						type="text"
+						class="combobox-input"
+						placeholder={`Search ${dialogEligible.length} ${dialogParent.category} tag${dialogEligible.length === 1 ? '' : 's'}…`}
+						autocomplete="off"
+						spellcheck="false"
+						role="combobox"
+						aria-expanded={cbOpen}
+						aria-autocomplete="list"
+						aria-controls="combobox-list"
+						aria-activedescendant={cbOpen && cbFiltered[cbActiveIndex]
+							? `combobox-opt-${cbFiltered[cbActiveIndex].id}`
+							: undefined}
+						bind:value={cbQuery}
+						oninput={cbOnInput}
+						onfocus={() => (cbOpen = true)}
+						onkeydown={cbOnKeyDown}
+					/>
+					{#if cbOpen}
+						<ul
+							id="combobox-list"
+							bind:this={cbListEl}
+							class="combobox-list"
+							role="listbox"
+						>
+							{#if cbFiltered.length === 0}
+								<li class="combobox-empty" role="presentation">
+									No matching tags
+								</li>
+							{:else}
+								{#each cbFiltered as opt, i (opt.id)}
+									<li
+										id="combobox-opt-{opt.id}"
+										class="combobox-option"
+										class:active={i === cbActiveIndex}
+										role="option"
+										aria-selected={i === cbActiveIndex}
+										data-index={i}
+										onmousedown={(e) => {
+											// mousedown beats the input's blur, so the
+											// list-close-on-blur doesn't fire before we pick.
+											e.preventDefault();
+											cbPick(opt.id, opt.name);
+										}}
+									>
+										<span class="opt-name">{opt.name}</span>
+										<span class="opt-count">({opt.count})</span>
+									</li>
+								{/each}
+							{/if}
+						</ul>
+					{/if}
+				</div>
+			</div>
 
 			<p class="dialog-note">
 				When you filter by <strong>{dialogParent.name}</strong>, you'll also see works
@@ -489,9 +671,20 @@
 		opacity: 0.6;
 	}
 
+	/* Five columns:
+	     1. caret (▼/▶) or spacer — 20px
+	     2. child glyph (⊃) or spacer — 16px
+	     3. name — flex
+	     4. usage count — auto
+	     5. action cluster (🙈/👁, ×, ＋) — auto
+	   Previous layout collapsed (4) and (5) into the same column, so
+	   the always-rendered action buttons sat on top of the count and
+	   the hover-bump made the overlap visually loud. Splitting them
+	   gives the count its own slot and the actions a stable strip to
+	   the right that doesn't shift between free/parent/child rows. */
 	.row-content {
 		display: grid;
-		grid-template-columns: 20px 16px 1fr auto;
+		grid-template-columns: 20px 16px 1fr auto auto;
 		align-items: center;
 		gap: 4px 6px;
 		padding: 6px 0;
@@ -541,8 +734,9 @@
 		grid-row: 1;
 		font-size: 0.8rem;
 		color: var(--reader-muted);
-		padding-right: 6px;
 	}
+	/* Subtext spans only columns 3-4 (name + count) so it never tucks
+	   under the action cluster on the right. */
 	.subtext {
 		grid-column: 3 / 5;
 		grid-row: 2;
@@ -552,11 +746,12 @@
 	}
 
 	.row-actions {
-		grid-column: 4;
+		grid-column: 5;
 		grid-row: 1 / 3;
 		display: inline-flex;
 		gap: 2px;
 		align-items: center;
+		margin-left: 6px;
 		opacity: 0.4;
 		transition: opacity 100ms ease;
 	}
@@ -625,13 +820,20 @@
 		gap: 4px;
 		margin-bottom: 0.75rem;
 	}
-	.picker-label > span {
+	.picker-text {
 		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--reader-muted);
 	}
-	.picker-label select {
+
+	/* ─── Combobox ─── */
+	.combobox {
+		position: relative;
+	}
+	.combobox-input {
+		width: 100%;
+		box-sizing: border-box;
 		font: inherit;
 		font-size: 0.9rem;
 		padding: 6px 8px;
@@ -639,7 +841,56 @@
 		border-radius: 4px;
 		background: var(--reader-bg);
 		color: var(--reader-fg);
+	}
+	.combobox-input::placeholder {
+		color: var(--reader-muted);
+		opacity: 0.7;
+	}
+	.combobox-input:focus {
+		outline: none;
+		border-color: var(--reader-accent);
+	}
+	.combobox-list {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(100% + 2px);
+		max-height: 220px;
+		overflow-y: auto;
+		margin: 0;
+		padding: 4px 0;
+		list-style: none;
+		background: var(--reader-bg);
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 10;
+		scrollbar-width: thin;
+	}
+	.combobox-option {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 5px 10px;
+		font-size: 0.88rem;
 		cursor: pointer;
+		color: var(--reader-fg);
+	}
+	.combobox-option:hover,
+	.combobox-option.active {
+		background: var(--reader-card-bg);
+	}
+	.combobox-option .opt-count {
+		flex: 0 0 auto;
+		font-size: 0.8rem;
+		color: var(--reader-muted);
+	}
+	.combobox-empty {
+		padding: 5px 10px;
+		font-size: 0.85rem;
+		color: var(--reader-muted);
+		font-style: italic;
 	}
 	.dialog-note {
 		font-size: 0.85rem;
