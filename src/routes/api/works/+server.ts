@@ -79,6 +79,34 @@ function parsePerPage(raw: string | null): number {
 	return ALLOWED_PER_PAGE.has(n) ? n : DEFAULT_PER_PAGE;
 }
 
+/**
+ * Sanitize the user's `q` into a safe FTS5 MATCH expression.
+ *
+ * Raw input goes through the works_fts virtual table, which has the
+ * `porter unicode61 remove_diacritics 2` tokenizer. FTS5 reserves a
+ * handful of characters as syntax (`*`, `+`, `-`, `:`, `"`, `(`, `)`,
+ * etc.), and passing user typing directly would either throw on parse
+ * or silently change meaning (a stray `-` becomes NOT, a `"` opens a
+ * phrase). We collapse anything that isn't a Unicode letter or digit
+ * to whitespace, then prefix-match each term (`term*`) so partial
+ * words match as the user is still typing.
+ *
+ * Multiple terms separated by whitespace are implicit AND in FTS5.
+ * Returns '' when nothing usable is left — the caller treats that as
+ * "no search filter".
+ */
+function sanitizeFtsQuery(raw: string | null): string {
+	if (!raw) return '';
+	const tokens = raw
+		.replace(/[^\p{L}\p{N}]+/gu, ' ')
+		.trim()
+		.toLowerCase()
+		.split(/\s+/)
+		.filter((t) => t.length > 0);
+	if (tokens.length === 0) return '';
+	return tokens.map((t) => `${t}*`).join(' ');
+}
+
 /** Map a DB row into the public-API work shape. */
 function rowToWork(r: Row) {
 	return {
@@ -117,67 +145,85 @@ const SELECT_COLUMNS = `
   rp.updated_at AS last_updated_at
 `;
 
+/**
+ * SQL fragment for the tag filter, written as a `w.id IN (…)` clause
+ * so it AND-composes with other clauses (e.g., the FTS search) without
+ * special handling. Uses the same CTE pipeline introduced in Step 5.5
+ * (OR-within / AND-within per category, AND-across categories) —
+ * verbatim, just lifted out of the inline GET handler so the
+ * additive WHERE-builder below can stitch it in.
+ */
+const TAG_FILTER_CLAUSE = `w.id IN (
+  WITH
+    filter_tags AS (SELECT value AS tag_id FROM json_each(?)),
+    match_all_cats AS (SELECT value AS category FROM json_each(?)),
+    required_per_cat AS (
+      SELECT t.category,
+        CASE WHEN t.category IN (SELECT category FROM match_all_cats)
+          THEN COUNT(*)
+          ELSE 1
+        END AS required
+      FROM filter_tags ft
+      JOIN tags t ON t.id = ft.tag_id
+      GROUP BY t.category
+    ),
+    work_matches AS (
+      SELECT wt.work_id, t.category,
+             COUNT(DISTINCT wt.tag_id) AS matched
+      FROM work_tags wt
+      JOIN tags t ON t.id = wt.tag_id
+      WHERE wt.tag_id IN (SELECT tag_id FROM filter_tags)
+      GROUP BY wt.work_id, t.category
+    )
+  SELECT wm.work_id
+  FROM work_matches wm
+  JOIN required_per_cat r ON r.category = wm.category
+  WHERE wm.matched >= r.required
+  GROUP BY wm.work_id
+  HAVING COUNT(DISTINCT wm.category) = (SELECT COUNT(*) FROM required_per_cat)
+)`;
+
+/**
+ * SQL fragment for the search filter. FTS5 MATCH against the
+ * works_fts virtual table; rejoined to works on id. Bound parameter
+ * is the sanitized query expression (already includes `*` prefix
+ * markers and implicit AND between terms).
+ */
+const SEARCH_CLAUSE = `w.id IN (SELECT work_id FROM works_fts WHERE works_fts MATCH ?)`;
+
 export const GET: RequestHandler = ({ url }) => {
 	const db = getDb();
 	const tagIds = parseTagIds(url.searchParams.get('tags'));
 	const matchAll = parseMatchAll(url.searchParams.get('match_all'));
+	const ftsQuery = sanitizeFtsQuery(url.searchParams.get('q'));
 	const paginate = url.searchParams.get('paginate') !== 'false';
 	const page = parsePage(url.searchParams.get('page'));
 	const perPage = parsePerPage(url.searchParams.get('per_page'));
 
-	// Filter pipeline: same CTE-based shape as Step 5.5. Empty filter
-	// short-circuits to a non-CTE query for clarity (this is the most
-	// common code path — every bare /api/works call hits it).
-	let baseSql: string;
-	let baseParams: unknown[];
+	// Build the WHERE additively. Both tag and search clauses are
+	// `w.id IN (…)` subqueries, so they AND together without special
+	// casing. When neither is present, no WHERE — every bare
+	// /api/works call hits that path.
+	const whereParts: string[] = [];
+	const whereParams: unknown[] = [];
 
-	if (tagIds.length === 0) {
-		baseSql = `
-			FROM works w
-			LEFT JOIN reading_progress rp ON rp.work_id = w.id
-		`;
-		baseParams = [];
-	} else {
-		// Tag filter. OR-within / AND-within per category (via
-		// match_all_cats) / AND-across categories. See Step 5.5's
-		// detailed comment for the pipeline rationale.
-		const tagJson = JSON.stringify(tagIds);
-		const matchAllJson = JSON.stringify(matchAll);
-		baseSql = `
-			FROM works w
-			LEFT JOIN reading_progress rp ON rp.work_id = w.id
-			WHERE w.id IN (
-			  WITH
-			    filter_tags AS (SELECT value AS tag_id FROM json_each(?)),
-			    match_all_cats AS (SELECT value AS category FROM json_each(?)),
-			    required_per_cat AS (
-			      SELECT t.category,
-			        CASE WHEN t.category IN (SELECT category FROM match_all_cats)
-			          THEN COUNT(*)
-			          ELSE 1
-			        END AS required
-			      FROM filter_tags ft
-			      JOIN tags t ON t.id = ft.tag_id
-			      GROUP BY t.category
-			    ),
-			    work_matches AS (
-			      SELECT wt.work_id, t.category,
-			             COUNT(DISTINCT wt.tag_id) AS matched
-			      FROM work_tags wt
-			      JOIN tags t ON t.id = wt.tag_id
-			      WHERE wt.tag_id IN (SELECT tag_id FROM filter_tags)
-			      GROUP BY wt.work_id, t.category
-			    )
-			  SELECT wm.work_id
-			  FROM work_matches wm
-			  JOIN required_per_cat r ON r.category = wm.category
-			  WHERE wm.matched >= r.required
-			  GROUP BY wm.work_id
-			  HAVING COUNT(DISTINCT wm.category) = (SELECT COUNT(*) FROM required_per_cat)
-			)
-		`;
-		baseParams = [tagJson, matchAllJson];
+	if (tagIds.length > 0) {
+		whereParts.push(TAG_FILTER_CLAUSE);
+		whereParams.push(JSON.stringify(tagIds), JSON.stringify(matchAll));
 	}
+
+	if (ftsQuery) {
+		whereParts.push(SEARCH_CLAUSE);
+		whereParams.push(ftsQuery);
+	}
+
+	const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+	const baseSql = `
+		FROM works w
+		LEFT JOIN reading_progress rp ON rp.work_id = w.id
+		${whereClause}
+	`;
+	const baseParams = whereParams;
 
 	// `paginate=false` returns the flat array — used by the library
 	// page's Continue Reading + Favorites lists, which derive their
