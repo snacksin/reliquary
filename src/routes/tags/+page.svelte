@@ -297,9 +297,17 @@
 			}
 			// Otherwise let the form's submit handler take over.
 		} else if (e.key === 'Escape') {
+			// Two-tier escape: first dismiss the listbox if it's open;
+			// only THEN let an Esc dismiss the dialog. Native `<dialog>`
+			// cancel-on-Esc is unreliable when an input child is focused
+			// inside a modal dialog (the browser routes the keydown to
+			// the focused element first), so close the dialog explicitly
+			// rather than relying on the cancel pathway.
+			e.preventDefault();
 			if (cbOpen) {
-				e.preventDefault();
 				cbOpen = false;
+			} else if (dialog?.open) {
+				dialog.close();
 			}
 		} else if (e.key === 'Home') {
 			if (cbOpen) {
