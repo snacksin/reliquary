@@ -60,16 +60,26 @@ export const GET: RequestHandler = ({ url }) => {
 	// Same `hidden_from_sidebar` predicate in both modes — defined once
 	// here so the WHERE clause and the SELECT'd column can't drift.
 	//
-	// Show-wins shape (English): a tag is hidden iff EVERY parent-alias
-	// row has hide=1. Equivalently, a tag is visible iff it has no
-	// parent-alias rows OR at least one parent-alias row with hide=0.
-	// The SELECT'd expression flips that for the management view's
-	// `hidden_from_sidebar` flag.
+	// Two independent hide mechanisms OR together (M2.1.6):
+	//
+	// 1. Per-tag flag: `tags.hide_from_sidebar = 1` (migration 0008),
+	//    toggled per-row on the /tags management page. Only affects the
+	//    tag's own sidebar row.
+	// 2. Per-edge show-wins (M2.1.5): a tag is edge-hidden iff EVERY
+	//    parent-alias row has hide=1. Equivalently, edge-visible iff it
+	//    has no parent-alias rows OR at least one row with hide=0.
+	//
+	// The SELECT'd expression is the combined effective state for the
+	// management view's `hidden_from_sidebar` flag. For root tags (no
+	// parent edges) it reduces to the per-tag flag exactly.
 	const hiddenExpr = `(
-		EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.alias_tag_id = t.id)
-		AND NOT EXISTS (
-			SELECT 1 FROM tag_aliases ta
-			WHERE ta.alias_tag_id = t.id AND ta.hide_from_sidebar = 0
+		t.hide_from_sidebar = 1
+		OR (
+			EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.alias_tag_id = t.id)
+			AND NOT EXISTS (
+				SELECT 1 FROM tag_aliases ta
+				WHERE ta.alias_tag_id = t.id AND ta.hide_from_sidebar = 0
+			)
 		)
 	)`;
 

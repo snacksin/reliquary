@@ -10,19 +10,11 @@ import { getAllTagAliasEdges, getTags } from '$lib/api';
  *
  * Both fetches in parallel; the page builds parent / child maps from
  * the edges client-side and renders the tree per category.
- *
- * `?include=<tag_id>[,<tag_id>…]` (M2.1.6) exempts specific tags from
- * the hide-single-use toggle, so a hidden single-use tag stays
- * reachable via direct URL.
  */
-export const load: PageLoad = async ({ fetch, url }) => {
+export const load: PageLoad = async ({ fetch }) => {
 	const [tagGroups, edges] = await Promise.all([
 		getTags(fetch, { includeHidden: true }),
 		getAllTagAliasEdges(fetch)
 	]);
-	const includeIds = (url.searchParams.get('include') ?? '')
-		.split(',')
-		.map((part) => Number(part.trim()))
-		.filter((n) => Number.isInteger(n) && n > 0);
-	return { tagGroups, edges, includeIds };
+	return { tagGroups, edges };
 };

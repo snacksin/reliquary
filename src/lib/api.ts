@@ -194,7 +194,10 @@ export type Tag = {
 	/**
 	 * Only present when `getTags({ includeHidden: true })` — the
 	 * default sidebar feed (without `include_hidden=true`) already
-	 * filters hidden tags out, so the flag isn't carried.
+	 * filters hidden tags out, so the flag isn't carried. Effective
+	 * state: the tag's own `tags.hide_from_sidebar` flag (M2.1.6) OR
+	 * the per-edge show-wins rule (M2.1.5). For root tags (no parent
+	 * edges) it equals the own flag exactly.
 	 */
 	hidden_from_sidebar?: boolean;
 	/**
@@ -273,6 +276,21 @@ export async function addTagAlias(
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ alias_tag_id: aliasId, hide_from_sidebar: hideFromSidebar })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Per-TAG sidebar hide (M2.1.6) — flips `tags.hide_from_sidebar` for
+ * one tag. Independent of the per-edge alias flag below: this affects
+ * only the tag's own row in the FilterSidebar feed; children remain
+ * governed by show-wins through their parent edges.
+ */
+export async function setTagHidden(tagId: number, hide: boolean, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/tags/${tagId}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ hide_from_sidebar: hide })
 	});
 	if (!res.ok) throw new Error(await extractError(res));
 }

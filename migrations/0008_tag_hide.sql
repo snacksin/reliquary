@@ -1,0 +1,13 @@
+-- M2.1.6: per-TAG sidebar hide. M2.1.5's hide_from_sidebar lives on
+-- tag_aliases edges (show-wins through parents), which means a free
+-- tag with no parents has no way to be hidden at all — and the main
+-- clutter source is exactly those: single-use author tags with no
+-- alias relationships. This column gives every tag its own flag,
+-- toggled per-row from the /tags management page.
+--
+-- Sidebar feed semantics (GET /api/tags default mode): a tag is
+-- excluded when its OWN flag is 1 OR the M2.1.5 edge show-wins rule
+-- says hidden. The two mechanisms are independent: the per-tag flag
+-- only affects that tag's own sidebar row; children remain governed
+-- by show-wins through their parent edges.
+ALTER TABLE tags ADD COLUMN hide_from_sidebar INTEGER NOT NULL DEFAULT 0;

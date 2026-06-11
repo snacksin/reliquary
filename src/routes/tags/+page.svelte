@@ -4,6 +4,7 @@
 		addTagAlias,
 		removeTagAlias,
 		setTagAliasHidden,
+		setTagHidden,
 		type Tag,
 		type TagAliasEdge,
 		type TagCategory
@@ -30,22 +31,20 @@
 	 */
 	const MAX_RENDER_DEPTH = 12;
 
-	// ─── M2.1.6: management-page sort + hide-single-use prefs ───────
+	// ─── M2.1.6: management-page sort pref ──────────────────────────
 	//
-	// Both are /tags-only view preferences — the FilterSidebar's
-	// `GET /api/tags` feed keeps its count-DESC ordering and show-wins
-	// hide logic untouched. Persistence follows the FilterSidebar /
-	// per-page-picker pattern: direct localStorage + a one-shot $effect
-	// hydration (no makePref — that factory is for reader CSS vars, and
-	// nothing visual depends on these before hydration).
+	// A /tags-only view preference — the FilterSidebar's `GET /api/tags`
+	// feed keeps its count-DESC ordering untouched. Persistence follows
+	// the FilterSidebar / per-page-picker pattern: direct localStorage +
+	// a one-shot $effect hydration (no makePref — that factory is for
+	// reader CSS vars, and nothing visual depends on this before
+	// hydration).
 
 	const SORT_KEY = 'prefs:tags:sort';
-	const HIDE_SINGLES_KEY = 'prefs:tags:hide_singles';
 	const SORT_OPTIONS = ['alphabetical', 'most_used', 'recently_added'] as const;
 	type TagsSort = (typeof SORT_OPTIONS)[number];
 
 	let sort = $state<TagsSort>('alphabetical');
-	let hideSingles = $state(false);
 
 	// Hydrate once on mount. $effect never runs during SSR, and this one
 	// reads no reactive state, so it fires exactly once in the browser.
@@ -54,15 +53,10 @@
 		if (storedSort && (SORT_OPTIONS as readonly string[]).includes(storedSort)) {
 			sort = storedSort as TagsSort;
 		}
-		hideSingles = localStorage.getItem(HIDE_SINGLES_KEY) === 'true';
 	});
 
 	function persistSort() {
 		localStorage.setItem(SORT_KEY, sort);
-	}
-
-	function persistHideSingles() {
-		localStorage.setItem(HIDE_SINGLES_KEY, String(hideSingles));
 	}
 
 	const byName = (a: Tag, b: Tag) =>
@@ -88,21 +82,46 @@
 		return byName;
 	});
 
-	/** Tags exempted from hide-singles via `?include=` (direct URL). */
-	const includeSet = $derived(new Set(data.includeIds));
+	// ─── M2.1.6: per-tag sidebar hide (root rows) ───────────────────
+	//
+	// Root rows get a 🙈/👁 toggle that flips the tag's OWN
+	// `tags.hide_from_sidebar` flag (migration 0008) — built to declutter
+	// single-use author tags from the FilterSidebar, available on every
+	// root tag. Child rows keep their M2.1.5 per-EDGE toggle as-is;
+	// children remain governed by show-wins through their parent edges.
+	//
+	// Hidden tags always render here (muted, same .hidden-edge styling
+	// as hidden children) so they stay manageable — the hide is only
+	// real in the FilterSidebar feed.
+	//
+	// Optimistic: the override map flips the UI immediately; a failed
+	// PATCH reverts it, a successful one reloads from the server and
+	// clears it. `data.tagGroups[…].hidden_from_sidebar` is the
+	// server-confirmed state; the override wins while a flip is in
+	// flight.
+	let selfHideOverride = $state<Record<number, boolean>>({});
 
 	/**
-	 * Hide-singles visibility. A count-1 tag that HAS children stays
-	 * visible even with the toggle on — it's structural (hiding it would
-	 * hide its whole rendered subtree), not the clutter the toggle
-	 * targets. The relationship metadata ("Has N children" subtext) is
-	 * computed from the unfiltered indexes either way, so hiding a
-	 * child never changes its parent's subtext.
+	 * Effective self-hidden state for a ROOT tag. Roots have no parent
+	 * edges, so the API's combined `hidden_from_sidebar` equals the
+	 * tag's own flag exactly.
 	 */
-	function isTagVisible(tag: Tag): boolean {
-		if (!hideSingles || tag.count !== 1) return true;
-		if ((childEdgesByParent.get(tag.id)?.length ?? 0) > 0) return true;
-		return includeSet.has(tag.id);
+	function isSelfHidden(tag: Tag): boolean {
+		return selfHideOverride[tag.id] ?? tag.hidden_from_sidebar ?? false;
+	}
+
+	async function handleToggleSelfHide(tag: Tag) {
+		mutationError = null;
+		const next = !isSelfHidden(tag);
+		selfHideOverride[tag.id] = next;
+		try {
+			await setTagHidden(tag.id, next, fetch);
+			await reloadAll();
+		} catch (e) {
+			mutationError = e instanceof Error ? e.message : 'Failed to update hide flag';
+		} finally {
+			delete selfHideOverride[tag.id];
+		}
 	}
 
 	// ─── Derived indexes over the load data ─────────────────────────
@@ -205,6 +224,10 @@
 				parts.push('(free)');
 			} else {
 				parts.push(childCount === 1 ? 'Has 1 child' : `Has ${childCount} children`);
+			}
+			const tag = tagsById.get(tagId);
+			if (tag && isSelfHidden(tag)) {
+				parts.push('Hidden from sidebar');
 			}
 		} else {
 			const parentTag = tagsById.get(edge.parent_tag_id);
@@ -468,10 +491,6 @@
 					<option value="recently_added">Recently added</option>
 				</select>
 			</label>
-			<label class="hide-singles-control">
-				<input type="checkbox" bind:checked={hideSingles} onchange={persistHideSingles} />
-				<span>Hide single-use tags</span>
-			</label>
 		</div>
 	</header>
 
@@ -491,8 +510,9 @@
 		{@const isExpanded = expanded[key] ?? false}
 		{@const isHidden = edge?.hide_from_sidebar === 1}
 		{@const isChildRow = edge !== null}
+		{@const selfHidden = !isChildRow && isSelfHidden(tag)}
 
-		<li class="tree-row" class:has-children={hasChildren} class:hidden-edge={isHidden}>
+		<li class="tree-row" class:has-children={hasChildren} class:hidden-edge={isHidden || selfHidden}>
 			<div class="row-content" style="padding-left: {depth * 1.4}rem">
 				{#if hasChildren}
 					<button
@@ -540,6 +560,18 @@
 						>
 							×
 						</button>
+					{:else}
+						<button
+							type="button"
+							class="action-btn"
+							onclick={() => handleToggleSelfHide(tag)}
+							title={selfHidden
+								? 'Hidden from the filter sidebar — click to show'
+								: 'Visible in the filter sidebar — click to hide'}
+							aria-label={selfHidden ? 'Unhide tag' : 'Hide tag'}
+						>
+							{selfHidden ? '🙈' : '👁'}
+						</button>
 					{/if}
 					<button
 						type="button"
@@ -557,7 +589,7 @@
 				<ul class="children">
 					{#each children as childEdge (childEdge.alias_tag_id)}
 						{@const childTag = tagsById.get(childEdge.alias_tag_id)}
-						{#if childTag && isTagVisible(childTag)}
+						{#if childTag}
 							{@render treeNode(childTag, childEdge, depth + 1, categoryKey)}
 						{/if}
 					{/each}
@@ -571,7 +603,7 @@
 	{/snippet}
 
 	{#each CATEGORY_LABELS as { key, label } (key)}
-		{@const roots = rootsByCategory[key].filter(isTagVisible)}
+		{@const roots = rootsByCategory[key]}
 		{#if roots.length > 0}
 			<section class="category-section">
 				<h2>{label} <span class="cat-count">{data.tagGroups[key].length}</span></h2>
@@ -747,18 +779,6 @@
 	.sort-control select:focus {
 		outline: none;
 		border-color: var(--reader-accent);
-	}
-	.hide-singles-control {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 0.85rem;
-		color: var(--reader-fg);
-		cursor: pointer;
-	}
-	.hide-singles-control input {
-		accent-color: var(--reader-fg);
-		margin: 0;
 	}
 
 	.page-error {
