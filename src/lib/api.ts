@@ -197,6 +197,13 @@ export type Tag = {
 	 * filters hidden tags out, so the flag isn't carried.
 	 */
 	hidden_from_sidebar?: boolean;
+	/**
+	 * SQLite DATETIME string (`YYYY-MM-DD HH:MM:SS`, UTC). Only present
+	 * when `getTags({ includeHidden: true })` — carried for the /tags
+	 * management page's "Recently added" sort (M2.1.6); the sidebar
+	 * feed doesn't need it.
+	 */
+	created_at?: string;
 };
 
 /**

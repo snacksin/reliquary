@@ -32,6 +32,7 @@ type Row = {
 	category: string;
 	name: string;
 	count: number;
+	created_at: string;
 	hidden_from_sidebar: number;
 };
 
@@ -48,6 +49,7 @@ type OutTag = {
 	id: number;
 	name: string;
 	count: number;
+	created_at?: string;
 	hidden_from_sidebar?: boolean;
 };
 
@@ -77,7 +79,7 @@ export const GET: RequestHandler = ({ url }) => {
 	}
 
 	const sql = `
-		SELECT t.id, t.category, t.name, COUNT(wt.work_id) AS count,
+		SELECT t.id, t.category, t.name, t.created_at, COUNT(wt.work_id) AS count,
 		       ${hiddenExpr} AS hidden_from_sidebar
 		 FROM tags t
 		 LEFT JOIN work_tags wt ON wt.tag_id = t.id
@@ -100,7 +102,13 @@ export const GET: RequestHandler = ({ url }) => {
 	for (const r of rows) {
 		if (r.category in groups) {
 			const out: OutTag = { id: r.id, name: r.name, count: r.count };
-			if (includeHidden) out.hidden_from_sidebar = r.hidden_from_sidebar === 1;
+			if (includeHidden) {
+				// Management-page-only fields (M2.1.6): the /tags page sorts
+				// by recency client-side, so created_at is carried only in
+				// include_hidden mode — same scoping as hidden_from_sidebar.
+				out.created_at = r.created_at;
+				out.hidden_from_sidebar = r.hidden_from_sidebar === 1;
+			}
 			groups[r.category as Category].push(out);
 		}
 	}

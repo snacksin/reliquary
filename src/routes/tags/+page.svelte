@@ -30,6 +30,81 @@
 	 */
 	const MAX_RENDER_DEPTH = 12;
 
+	// ─── M2.1.6: management-page sort + hide-single-use prefs ───────
+	//
+	// Both are /tags-only view preferences — the FilterSidebar's
+	// `GET /api/tags` feed keeps its count-DESC ordering and show-wins
+	// hide logic untouched. Persistence follows the FilterSidebar /
+	// per-page-picker pattern: direct localStorage + a one-shot $effect
+	// hydration (no makePref — that factory is for reader CSS vars, and
+	// nothing visual depends on these before hydration).
+
+	const SORT_KEY = 'prefs:tags:sort';
+	const HIDE_SINGLES_KEY = 'prefs:tags:hide_singles';
+	const SORT_OPTIONS = ['alphabetical', 'most_used', 'recently_added'] as const;
+	type TagsSort = (typeof SORT_OPTIONS)[number];
+
+	let sort = $state<TagsSort>('alphabetical');
+	let hideSingles = $state(false);
+
+	// Hydrate once on mount. $effect never runs during SSR, and this one
+	// reads no reactive state, so it fires exactly once in the browser.
+	$effect(() => {
+		const storedSort = localStorage.getItem(SORT_KEY);
+		if (storedSort && (SORT_OPTIONS as readonly string[]).includes(storedSort)) {
+			sort = storedSort as TagsSort;
+		}
+		hideSingles = localStorage.getItem(HIDE_SINGLES_KEY) === 'true';
+	});
+
+	function persistSort() {
+		localStorage.setItem(SORT_KEY, sort);
+	}
+
+	function persistHideSingles() {
+		localStorage.setItem(HIDE_SINGLES_KEY, String(hideSingles));
+	}
+
+	const byName = (a: Tag, b: Tag) =>
+		a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+	/**
+	 * Within-category tag comparator for the active sort. Applies to both
+	 * root rows and child lists inside expanded trees.
+	 *
+	 * - alphabetical: case-insensitive A→Z (the management default)
+	 * - most_used: count DESC then name ASC — same as the sidebar feed
+	 * - recently_added: created_at DESC (SQLite DATETIME strings sort
+	 *   lexicographically), tiebreak id DESC because bulk imports mint
+	 *   many tags in the same second
+	 */
+	const comparator = $derived.by((): ((a: Tag, b: Tag) => number) => {
+		if (sort === 'most_used') {
+			return (a, b) => b.count - a.count || byName(a, b);
+		}
+		if (sort === 'recently_added') {
+			return (a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '') || b.id - a.id;
+		}
+		return byName;
+	});
+
+	/** Tags exempted from hide-singles via `?include=` (direct URL). */
+	const includeSet = $derived(new Set(data.includeIds));
+
+	/**
+	 * Hide-singles visibility. A count-1 tag that HAS children stays
+	 * visible even with the toggle on — it's structural (hiding it would
+	 * hide its whole rendered subtree), not the clutter the toggle
+	 * targets. The relationship metadata ("Has N children" subtext) is
+	 * computed from the unfiltered indexes either way, so hiding a
+	 * child never changes its parent's subtext.
+	 */
+	function isTagVisible(tag: Tag): boolean {
+		if (!hideSingles || tag.count !== 1) return true;
+		if ((childEdgesByParent.get(tag.id)?.length ?? 0) > 0) return true;
+		return includeSet.has(tag.id);
+	}
+
 	// ─── Derived indexes over the load data ─────────────────────────
 
 	/** All tags from all categories, keyed by id. */
@@ -41,7 +116,7 @@
 		return m;
 	});
 
-	/** Edges out of each parent (children list, sorted by child name). */
+	/** Edges out of each parent (children list, ordered by the active sort). */
 	const childEdgesByParent = $derived.by(() => {
 		const m = new Map<number, TagAliasEdge[]>();
 		for (const e of data.edges) {
@@ -50,9 +125,10 @@
 		}
 		for (const list of m.values()) {
 			list.sort((a, b) => {
-				const an = tagsById.get(a.alias_tag_id)?.name ?? '';
-				const bn = tagsById.get(b.alias_tag_id)?.name ?? '';
-				return an.localeCompare(bn);
+				const at = tagsById.get(a.alias_tag_id);
+				const bt = tagsById.get(b.alias_tag_id);
+				if (!at || !bt) return 0;
+				return comparator(at, bt);
 			});
 		}
 		return m;
@@ -81,7 +157,7 @@
 			freeform: []
 		};
 		for (const { key } of CATEGORY_LABELS) {
-			m[key] = data.tagGroups[key].filter((t) => !childIds.has(t.id));
+			m[key] = data.tagGroups[key].filter((t) => !childIds.has(t.id)).toSorted(comparator);
 		}
 		return m;
 	});
@@ -382,6 +458,21 @@
 			filter your library by a parent tag, you'll also see works tagged with any of its
 			children. Setup is manual — you decide which tags belong together.
 		</p>
+
+		<div class="controls">
+			<label class="sort-control">
+				<span class="control-label">Sort</span>
+				<select bind:value={sort} onchange={persistSort}>
+					<option value="alphabetical">Alphabetical</option>
+					<option value="most_used">Most used</option>
+					<option value="recently_added">Recently added</option>
+				</select>
+			</label>
+			<label class="hide-singles-control">
+				<input type="checkbox" bind:checked={hideSingles} onchange={persistHideSingles} />
+				<span>Hide single-use tags</span>
+			</label>
+		</div>
 	</header>
 
 	{#if mutationError}
@@ -466,7 +557,7 @@
 				<ul class="children">
 					{#each children as childEdge (childEdge.alias_tag_id)}
 						{@const childTag = tagsById.get(childEdge.alias_tag_id)}
-						{#if childTag}
+						{#if childTag && isTagVisible(childTag)}
 							{@render treeNode(childTag, childEdge, depth + 1, categoryKey)}
 						{/if}
 					{/each}
@@ -480,7 +571,7 @@
 	{/snippet}
 
 	{#each CATEGORY_LABELS as { key, label } (key)}
-		{@const roots = rootsByCategory[key]}
+		{@const roots = rootsByCategory[key].filter(isTagVisible)}
 		{#if roots.length > 0}
 			<section class="category-section">
 				<h2>{label} <span class="cat-count">{data.tagGroups[key].length}</span></h2>
@@ -623,6 +714,51 @@
 		color: var(--reader-muted);
 		margin: 0;
 		max-width: 60ch;
+	}
+
+	/* ─── M2.1.6 view controls (sort + hide single-use) ─── */
+	.controls {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.5rem;
+		margin-top: 1rem;
+	}
+	.sort-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.control-label {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+	}
+	.sort-control select {
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 4px 6px;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-bg);
+		color: var(--reader-fg);
+	}
+	.sort-control select:focus {
+		outline: none;
+		border-color: var(--reader-accent);
+	}
+	.hide-singles-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.85rem;
+		color: var(--reader-fg);
+		cursor: pointer;
+	}
+	.hide-singles-control input {
+		accent-color: var(--reader-fg);
+		margin: 0;
 	}
 
 	.page-error {
