@@ -32,6 +32,7 @@ type Row = {
 	category: string;
 	name: string;
 	count: number;
+	created_at: string;
 	hidden_from_sidebar: number;
 };
 
@@ -48,6 +49,7 @@ type OutTag = {
 	id: number;
 	name: string;
 	count: number;
+	created_at?: string;
 	hidden_from_sidebar?: boolean;
 };
 
@@ -58,16 +60,26 @@ export const GET: RequestHandler = ({ url }) => {
 	// Same `hidden_from_sidebar` predicate in both modes — defined once
 	// here so the WHERE clause and the SELECT'd column can't drift.
 	//
-	// Show-wins shape (English): a tag is hidden iff EVERY parent-alias
-	// row has hide=1. Equivalently, a tag is visible iff it has no
-	// parent-alias rows OR at least one parent-alias row with hide=0.
-	// The SELECT'd expression flips that for the management view's
-	// `hidden_from_sidebar` flag.
+	// Two independent hide mechanisms OR together (M2.1.6):
+	//
+	// 1. Per-tag flag: `tags.hide_from_sidebar = 1` (migration 0008),
+	//    toggled per-row on the /tags management page. Only affects the
+	//    tag's own sidebar row.
+	// 2. Per-edge show-wins (M2.1.5): a tag is edge-hidden iff EVERY
+	//    parent-alias row has hide=1. Equivalently, edge-visible iff it
+	//    has no parent-alias rows OR at least one row with hide=0.
+	//
+	// The SELECT'd expression is the combined effective state for the
+	// management view's `hidden_from_sidebar` flag. For root tags (no
+	// parent edges) it reduces to the per-tag flag exactly.
 	const hiddenExpr = `(
-		EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.alias_tag_id = t.id)
-		AND NOT EXISTS (
-			SELECT 1 FROM tag_aliases ta
-			WHERE ta.alias_tag_id = t.id AND ta.hide_from_sidebar = 0
+		t.hide_from_sidebar = 1
+		OR (
+			EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.alias_tag_id = t.id)
+			AND NOT EXISTS (
+				SELECT 1 FROM tag_aliases ta
+				WHERE ta.alias_tag_id = t.id AND ta.hide_from_sidebar = 0
+			)
 		)
 	)`;
 
@@ -77,7 +89,7 @@ export const GET: RequestHandler = ({ url }) => {
 	}
 
 	const sql = `
-		SELECT t.id, t.category, t.name, COUNT(wt.work_id) AS count,
+		SELECT t.id, t.category, t.name, t.created_at, COUNT(wt.work_id) AS count,
 		       ${hiddenExpr} AS hidden_from_sidebar
 		 FROM tags t
 		 LEFT JOIN work_tags wt ON wt.tag_id = t.id
@@ -100,7 +112,13 @@ export const GET: RequestHandler = ({ url }) => {
 	for (const r of rows) {
 		if (r.category in groups) {
 			const out: OutTag = { id: r.id, name: r.name, count: r.count };
-			if (includeHidden) out.hidden_from_sidebar = r.hidden_from_sidebar === 1;
+			if (includeHidden) {
+				// Management-page-only fields (M2.1.6): the /tags page sorts
+				// by recency client-side, so created_at is carried only in
+				// include_hidden mode — same scoping as hidden_from_sidebar.
+				out.created_at = r.created_at;
+				out.hidden_from_sidebar = r.hidden_from_sidebar === 1;
+			}
 			groups[r.category as Category].push(out);
 		}
 	}

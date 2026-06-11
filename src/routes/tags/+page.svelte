@@ -4,6 +4,7 @@
 		addTagAlias,
 		removeTagAlias,
 		setTagAliasHidden,
+		setTagHidden,
 		type Tag,
 		type TagAliasEdge,
 		type TagCategory
@@ -30,6 +31,145 @@
 	 */
 	const MAX_RENDER_DEPTH = 12;
 
+	// ─── M2.1.6: management-page sort pref ──────────────────────────
+	//
+	// A /tags-only view preference — the FilterSidebar's `GET /api/tags`
+	// feed keeps its count-DESC ordering untouched. Persistence follows
+	// the FilterSidebar / per-page-picker pattern: direct localStorage +
+	// a one-shot $effect hydration (no makePref — that factory is for
+	// reader CSS vars, and nothing visual depends on this before
+	// hydration).
+
+	const SORT_KEY = 'prefs:tags:sort';
+	const SORT_OPTIONS = ['alphabetical', 'most_used', 'recently_added'] as const;
+	type TagsSort = (typeof SORT_OPTIONS)[number];
+
+	let sort = $state<TagsSort>('alphabetical');
+
+	// Hydrate once on mount. $effect never runs during SSR, and this one
+	// reads no reactive state, so it fires exactly once in the browser.
+	$effect(() => {
+		const storedSort = localStorage.getItem(SORT_KEY);
+		if (storedSort && (SORT_OPTIONS as readonly string[]).includes(storedSort)) {
+			sort = storedSort as TagsSort;
+		}
+	});
+
+	function persistSort() {
+		localStorage.setItem(SORT_KEY, sort);
+	}
+
+	const byName = (a: Tag, b: Tag) =>
+		a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+	/**
+	 * Within-category tag comparator for the active sort. Applies to both
+	 * root rows and child lists inside expanded trees.
+	 *
+	 * - alphabetical: case-insensitive A→Z (the management default)
+	 * - most_used: count DESC then name ASC — same as the sidebar feed
+	 * - recently_added: created_at DESC (SQLite DATETIME strings sort
+	 *   lexicographically), tiebreak id DESC because bulk imports mint
+	 *   many tags in the same second
+	 */
+	const comparator = $derived.by((): ((a: Tag, b: Tag) => number) => {
+		if (sort === 'most_used') {
+			return (a, b) => b.count - a.count || byName(a, b);
+		}
+		if (sort === 'recently_added') {
+			return (a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '') || b.id - a.id;
+		}
+		return byName;
+	});
+
+	// ─── M2.1.6: per-tag sidebar hide (root rows) ───────────────────
+	//
+	// Root rows get a 🙈/👁 toggle that flips the tag's OWN
+	// `tags.hide_from_sidebar` flag (migration 0008) — built to declutter
+	// single-use author tags from the FilterSidebar, available on every
+	// root tag. Child rows keep their M2.1.5 per-EDGE toggle as-is;
+	// children remain governed by show-wins through their parent edges.
+	//
+	// Hidden tags always render here (muted, same .hidden-edge styling
+	// as hidden children) so they stay manageable — the hide is only
+	// real in the FilterSidebar feed.
+	//
+	// Optimistic: the override map flips the UI immediately; a failed
+	// PATCH reverts it, a successful one reloads from the server and
+	// clears it. `data.tagGroups[…].hidden_from_sidebar` is the
+	// server-confirmed state; the override wins while a flip is in
+	// flight.
+	let selfHideOverride = $state<Record<number, boolean>>({});
+
+	/**
+	 * Effective self-hidden state for a ROOT tag. Roots have no parent
+	 * edges, so the API's combined `hidden_from_sidebar` equals the
+	 * tag's own flag exactly.
+	 */
+	function isSelfHidden(tag: Tag): boolean {
+		return selfHideOverride[tag.id] ?? tag.hidden_from_sidebar ?? false;
+	}
+
+	async function applySelfHide(tag: Tag, next: boolean) {
+		mutationError = null;
+		selfHideOverride[tag.id] = next;
+		try {
+			await setTagHidden(tag.id, next, fetch);
+			await reloadAll();
+		} catch (e) {
+			mutationError = e instanceof Error ? e.message : 'Failed to update hide flag';
+		} finally {
+			delete selfHideOverride[tag.id];
+		}
+	}
+
+	// ─── Hide-confirmation dialog for parent tags ───────────────────
+	//
+	// Hiding a tag that has children grouped under it gets a
+	// confirmation step — the user may not remember the row is a
+	// parent. The dialog fires ONLY for root-row hide clicks on tags
+	// with children; leaf hides, child-row (per-edge) toggles, and
+	// un-hides all apply immediately (un-hide is reversible, no
+	// warning needed). Pure UI — the PATCH is unchanged.
+	let hideConfirmDialog = $state<HTMLDialogElement | null>(null);
+	let hideConfirmTag = $state<Tag | null>(null);
+	let hideConfirmCancelEl = $state<HTMLButtonElement | null>(null);
+
+	function requestToggleSelfHide(tag: Tag) {
+		const next = !isSelfHidden(tag);
+		const childCount = childEdgesByParent.get(tag.id)?.length ?? 0;
+		if (next && childCount > 0) {
+			hideConfirmTag = tag;
+			hideConfirmDialog?.showModal();
+			// Defer focus until the dialog has rendered. Cancel is the
+			// default focus — Esc/Cancel are the safe paths.
+			queueMicrotask(() => hideConfirmCancelEl?.focus());
+			return;
+		}
+		void applySelfHide(tag, next);
+	}
+
+	function closeHideConfirm() {
+		// Explicit dialog.close() rather than relying on native
+		// cancel-on-Esc — same reliability pattern as the Group dialog
+		// (M2.1.5 PR #32).
+		hideConfirmDialog?.close();
+		hideConfirmTag = null;
+	}
+
+	function confirmHide() {
+		const tag = hideConfirmTag;
+		closeHideConfirm();
+		if (tag) void applySelfHide(tag, true);
+	}
+
+	function hideConfirmKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			closeHideConfirm();
+		}
+	}
+
 	// ─── Derived indexes over the load data ─────────────────────────
 
 	/** All tags from all categories, keyed by id. */
@@ -41,7 +181,7 @@
 		return m;
 	});
 
-	/** Edges out of each parent (children list, sorted by child name). */
+	/** Edges out of each parent (children list, ordered by the active sort). */
 	const childEdgesByParent = $derived.by(() => {
 		const m = new Map<number, TagAliasEdge[]>();
 		for (const e of data.edges) {
@@ -50,9 +190,10 @@
 		}
 		for (const list of m.values()) {
 			list.sort((a, b) => {
-				const an = tagsById.get(a.alias_tag_id)?.name ?? '';
-				const bn = tagsById.get(b.alias_tag_id)?.name ?? '';
-				return an.localeCompare(bn);
+				const at = tagsById.get(a.alias_tag_id);
+				const bt = tagsById.get(b.alias_tag_id);
+				if (!at || !bt) return 0;
+				return comparator(at, bt);
 			});
 		}
 		return m;
@@ -81,7 +222,7 @@
 			freeform: []
 		};
 		for (const { key } of CATEGORY_LABELS) {
-			m[key] = data.tagGroups[key].filter((t) => !childIds.has(t.id));
+			m[key] = data.tagGroups[key].filter((t) => !childIds.has(t.id)).toSorted(comparator);
 		}
 		return m;
 	});
@@ -129,6 +270,10 @@
 				parts.push('(free)');
 			} else {
 				parts.push(childCount === 1 ? 'Has 1 child' : `Has ${childCount} children`);
+			}
+			const tag = tagsById.get(tagId);
+			if (tag && isSelfHidden(tag)) {
+				parts.push('Hidden from sidebar');
 			}
 		} else {
 			const parentTag = tagsById.get(edge.parent_tag_id);
@@ -382,6 +527,17 @@
 			filter your library by a parent tag, you'll also see works tagged with any of its
 			children. Setup is manual — you decide which tags belong together.
 		</p>
+
+		<div class="controls">
+			<label class="sort-control">
+				<span class="control-label">Sort</span>
+				<select bind:value={sort} onchange={persistSort}>
+					<option value="alphabetical">Alphabetical</option>
+					<option value="most_used">Most used</option>
+					<option value="recently_added">Recently added</option>
+				</select>
+			</label>
+		</div>
 	</header>
 
 	{#if mutationError}
@@ -400,8 +556,9 @@
 		{@const isExpanded = expanded[key] ?? false}
 		{@const isHidden = edge?.hide_from_sidebar === 1}
 		{@const isChildRow = edge !== null}
+		{@const selfHidden = !isChildRow && isSelfHidden(tag)}
 
-		<li class="tree-row" class:has-children={hasChildren} class:hidden-edge={isHidden}>
+		<li class="tree-row" class:has-children={hasChildren} class:hidden-edge={isHidden || selfHidden}>
 			<div class="row-content" style="padding-left: {depth * 1.4}rem">
 				{#if hasChildren}
 					<button
@@ -448,6 +605,18 @@
 							aria-label="Ungroup"
 						>
 							×
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="action-btn"
+							onclick={() => requestToggleSelfHide(tag)}
+							title={selfHidden
+								? 'Hidden from the filter sidebar — click to show'
+								: 'Visible in the filter sidebar — click to hide'}
+							aria-label={selfHidden ? 'Unhide tag' : 'Hide tag'}
+						>
+							{selfHidden ? '🙈' : '👁'}
 						</button>
 					{/if}
 					<button
@@ -591,6 +760,34 @@
 	{/if}
 </dialog>
 
+<dialog
+	bind:this={hideConfirmDialog}
+	class="hide-confirm-dialog"
+	onclose={() => (hideConfirmTag = null)}
+	onkeydown={hideConfirmKeydown}
+>
+	{#if hideConfirmTag}
+		{@const childCount = childEdgesByParent.get(hideConfirmTag.id)?.length ?? 0}
+		<h2>Hide "{hideConfirmTag.name}"?</h2>
+		<p>
+			This tag has {childCount} child tag{childCount === 1 ? '' : 's'} grouped under it.
+			Hiding it removes "{hideConfirmTag.name}" from the sidebar. Children stay visible
+			per their own settings.
+		</p>
+		<div class="dialog-actions">
+			<button
+				type="button"
+				class="secondary"
+				bind:this={hideConfirmCancelEl}
+				onclick={closeHideConfirm}
+			>
+				Cancel
+			</button>
+			<button type="button" class="primary" onclick={confirmHide}>Hide</button>
+		</div>
+	{/if}
+</dialog>
+
 <style>
 	.tags-page {
 		max-width: 820px;
@@ -623,6 +820,39 @@
 		color: var(--reader-muted);
 		margin: 0;
 		max-width: 60ch;
+	}
+
+	/* ─── M2.1.6 view controls (sort + hide single-use) ─── */
+	.controls {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.5rem;
+		margin-top: 1rem;
+	}
+	.sort-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.control-label {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+	}
+	.sort-control select {
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 4px 6px;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-bg);
+		color: var(--reader-fg);
+	}
+	.sort-control select:focus {
+		outline: none;
+		border-color: var(--reader-accent);
 	}
 
 	.page-error {
@@ -793,6 +1023,31 @@
 		margin: 0;
 		padding-top: 4px;
 		padding-bottom: 4px;
+	}
+
+	/* ─── Hide-confirmation dialog (parent tags) ─── */
+	.hide-confirm-dialog {
+		max-width: 420px;
+		width: 90vw;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		background: var(--reader-bg);
+		color: var(--reader-fg);
+		padding: 1.25rem 1.5rem;
+		font-family: system-ui, sans-serif;
+	}
+	.hide-confirm-dialog::backdrop {
+		background: rgba(0, 0, 0, 0.4);
+	}
+	.hide-confirm-dialog h2 {
+		font-size: 1.05rem;
+		margin: 0 0 0.75rem;
+		font-weight: 600;
+	}
+	.hide-confirm-dialog p {
+		font-size: 0.9rem;
+		line-height: 1.5;
+		margin: 0 0 1rem;
 	}
 
 	/* ─── "Group under" modal dialog ─── */
