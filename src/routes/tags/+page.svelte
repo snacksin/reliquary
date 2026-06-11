@@ -110,9 +110,8 @@
 		return selfHideOverride[tag.id] ?? tag.hidden_from_sidebar ?? false;
 	}
 
-	async function handleToggleSelfHide(tag: Tag) {
+	async function applySelfHide(tag: Tag, next: boolean) {
 		mutationError = null;
-		const next = !isSelfHidden(tag);
 		selfHideOverride[tag.id] = next;
 		try {
 			await setTagHidden(tag.id, next, fetch);
@@ -121,6 +120,53 @@
 			mutationError = e instanceof Error ? e.message : 'Failed to update hide flag';
 		} finally {
 			delete selfHideOverride[tag.id];
+		}
+	}
+
+	// ─── Hide-confirmation dialog for parent tags ───────────────────
+	//
+	// Hiding a tag that has children grouped under it gets a
+	// confirmation step — the user may not remember the row is a
+	// parent. The dialog fires ONLY for root-row hide clicks on tags
+	// with children; leaf hides, child-row (per-edge) toggles, and
+	// un-hides all apply immediately (un-hide is reversible, no
+	// warning needed). Pure UI — the PATCH is unchanged.
+	let hideConfirmDialog = $state<HTMLDialogElement | null>(null);
+	let hideConfirmTag = $state<Tag | null>(null);
+	let hideConfirmCancelEl = $state<HTMLButtonElement | null>(null);
+
+	function requestToggleSelfHide(tag: Tag) {
+		const next = !isSelfHidden(tag);
+		const childCount = childEdgesByParent.get(tag.id)?.length ?? 0;
+		if (next && childCount > 0) {
+			hideConfirmTag = tag;
+			hideConfirmDialog?.showModal();
+			// Defer focus until the dialog has rendered. Cancel is the
+			// default focus — Esc/Cancel are the safe paths.
+			queueMicrotask(() => hideConfirmCancelEl?.focus());
+			return;
+		}
+		void applySelfHide(tag, next);
+	}
+
+	function closeHideConfirm() {
+		// Explicit dialog.close() rather than relying on native
+		// cancel-on-Esc — same reliability pattern as the Group dialog
+		// (M2.1.5 PR #32).
+		hideConfirmDialog?.close();
+		hideConfirmTag = null;
+	}
+
+	function confirmHide() {
+		const tag = hideConfirmTag;
+		closeHideConfirm();
+		if (tag) void applySelfHide(tag, true);
+	}
+
+	function hideConfirmKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			closeHideConfirm();
 		}
 	}
 
@@ -564,7 +610,7 @@
 						<button
 							type="button"
 							class="action-btn"
-							onclick={() => handleToggleSelfHide(tag)}
+							onclick={() => requestToggleSelfHide(tag)}
 							title={selfHidden
 								? 'Hidden from the filter sidebar — click to show'
 								: 'Visible in the filter sidebar — click to hide'}
@@ -711,6 +757,34 @@
 				</button>
 			</div>
 		</form>
+	{/if}
+</dialog>
+
+<dialog
+	bind:this={hideConfirmDialog}
+	class="hide-confirm-dialog"
+	onclose={() => (hideConfirmTag = null)}
+	onkeydown={hideConfirmKeydown}
+>
+	{#if hideConfirmTag}
+		{@const childCount = childEdgesByParent.get(hideConfirmTag.id)?.length ?? 0}
+		<h2>Hide "{hideConfirmTag.name}"?</h2>
+		<p>
+			This tag has {childCount} child tag{childCount === 1 ? '' : 's'} grouped under it.
+			Hiding it removes "{hideConfirmTag.name}" from the sidebar. Children stay visible
+			per their own settings.
+		</p>
+		<div class="dialog-actions">
+			<button
+				type="button"
+				class="secondary"
+				bind:this={hideConfirmCancelEl}
+				onclick={closeHideConfirm}
+			>
+				Cancel
+			</button>
+			<button type="button" class="primary" onclick={confirmHide}>Hide</button>
+		</div>
 	{/if}
 </dialog>
 
@@ -949,6 +1023,31 @@
 		margin: 0;
 		padding-top: 4px;
 		padding-bottom: 4px;
+	}
+
+	/* ─── Hide-confirmation dialog (parent tags) ─── */
+	.hide-confirm-dialog {
+		max-width: 420px;
+		width: 90vw;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		background: var(--reader-bg);
+		color: var(--reader-fg);
+		padding: 1.25rem 1.5rem;
+		font-family: system-ui, sans-serif;
+	}
+	.hide-confirm-dialog::backdrop {
+		background: rgba(0, 0, 0, 0.4);
+	}
+	.hide-confirm-dialog h2 {
+		font-size: 1.05rem;
+		margin: 0 0 0.75rem;
+		font-weight: 600;
+	}
+	.hide-confirm-dialog p {
+		font-size: 0.9rem;
+		line-height: 1.5;
+		margin: 0 0 1rem;
 	}
 
 	/* ─── "Group under" modal dialog ─── */
