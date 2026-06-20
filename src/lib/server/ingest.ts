@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from './db';
 import {
@@ -9,7 +9,7 @@ import {
 	type ParsedEpub,
 	type ParsedImage
 } from './epub';
-import { computeContentHash } from './identity';
+import { computeContentHash, countWords, hashChapterContent } from './identity';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -250,15 +250,79 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	);
 	const linkWorkTag = db.prepare(`INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)`);
 
-	// ── Update-in-place: the WIP-got-new-chapters path. ──
+	// ── Update-in-place: the WIP-got-new-chapters / edited-chapter path. ──
 	if (match && match.kind === 'update') {
 		const finalId = match.row.id;
 		const finalDir = join('data', 'works', finalId);
 		const stagingDir = join('data', 'works', `.staging-${parseId}`);
 		const chapters = remapImageSrcs(parsed.chapters, parseId, finalId);
 
+		// Existing chapter rows, keyed by number. Update-in-place reconciles
+		// against these (preserving real-chapter ids) rather than
+		// delete+reinsert, so chapter_history.chapter_id stays valid as a
+		// chapter is edited across multiple updates.
+		type ExistingChapter = {
+			id: string;
+			number: number;
+			kind: string;
+			content_path: string;
+		};
+		const existingChapters = db
+			.prepare(`SELECT id, number, kind, content_path FROM chapters WHERE work_id = ?`)
+			.all(finalId) as ExistingChapter[];
+		const existingByNumber = new Map(existingChapters.map((c) => [c.number, c]));
+		const incomingNumbers = new Set(chapters.map((c) => c.number));
+
+		// Chapter History (DESIGN §6.7b): for each EXISTING real chapter
+		// whose stored HTML differs from the incoming HTML, stage the OLD
+		// version into _history before the swap overwrites it. Filesystem-
+		// safe ISO timestamp; uniqueness is guaranteed across updates (ms
+		// precision differs) and within an update (the chapter number
+		// differs per file).
+		const archiveTs = new Date().toISOString().replace(/[:.]/g, '-');
+		type ArchiveEntry = {
+			chapterId: string;
+			previousHash: string;
+			previousPath: string;
+			wordCount: number;
+		};
+		const archives: ArchiveEntry[] = [];
+
 		try {
 			writeWorkFiles(stagingDir, chapters, parsed.images);
+
+			// Carry any prior archives forward — the dir swap below replaces
+			// the whole work dir, so existing _history must live in staging
+			// or it'd be lost. Archives are never deleted by the update path.
+			const existingHistoryDir = join(finalDir, '_history');
+			const stagingHistoryDir = join(stagingDir, '_history');
+			if (existsSync(existingHistoryDir)) {
+				cpSync(existingHistoryDir, stagingHistoryDir, { recursive: true });
+			}
+
+			for (const inc of chapters) {
+				const ex = existingByNumber.get(inc.number);
+				if (!ex || ex.kind !== 'chapter') continue; // appended or wrapper → nothing to archive
+				let oldHtml: string;
+				try {
+					oldHtml = readFileSync(ex.content_path, 'utf8');
+				} catch {
+					continue; // missing old file → can't archive; don't fabricate
+				}
+				const oldHash = hashChapterContent(oldHtml, finalId);
+				const newHash = hashChapterContent(inc.html, finalId);
+				if (oldHash === newHash) continue; // unchanged → no archive, no row
+
+				const archiveRel = join('_history', `ch-${inc.number}-${archiveTs}.html`);
+				mkdirSync(stagingHistoryDir, { recursive: true });
+				writeFileSync(join(stagingDir, archiveRel), oldHtml, 'utf8');
+				archives.push({
+					chapterId: ex.id,
+					previousHash: oldHash,
+					previousPath: join(finalDir, archiveRel),
+					wordCount: countWords(oldHtml)
+				});
+			}
 		} catch (e) {
 			console.error(`[ingest] staging write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
 			try {
@@ -269,18 +333,30 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			throw new IngestError('Failed to write work files', 'write', { cause: e });
 		}
 
+		const archiveByChapterId = new Map(archives.map((a) => [a.chapterId, a]));
+
 		const updateWork = db.prepare(
 			`UPDATE works
 			   SET title = ?, author = ?, summary = ?, chapter_count = ?,
 			       content_hash = ?, trashed_at = NULL
 			 WHERE id = ?`
 		);
-		const deleteChapters = db.prepare(`DELETE FROM chapters WHERE work_id = ?`);
-		const deleteWorkTags = db.prepare(`DELETE FROM work_tags WHERE work_id = ?`);
-		const insertChapter = db.prepare(
-			`INSERT INTO chapters (id, work_id, number, title, content_path, kind)
-			 VALUES (?, ?, ?, ?, ?, ?)`
+		const updateChapter = db.prepare(
+			`UPDATE chapters SET title = ?, content_path = ?, kind = ?, content_hash = ? WHERE id = ?`
 		);
+		const insertChapter = db.prepare(
+			`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`
+		);
+		const deleteChapter = db.prepare(`DELETE FROM chapters WHERE id = ?`);
+		const insertHistory = db.prepare(
+			`INSERT INTO chapter_history (chapter_id, previous_hash, previous_path, word_count)
+			 VALUES (?, ?, ?, ?)`
+		);
+		const stampEdited = db.prepare(
+			`UPDATE chapters SET last_edited_at = CURRENT_TIMESTAMP WHERE id = ?`
+		);
+		const deleteWorkTags = db.prepare(`DELETE FROM work_tags WHERE work_id = ?`);
 
 		try {
 			db.transaction(() => {
@@ -295,17 +371,37 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 					contentHash,
 					finalId
 				);
-				deleteChapters.run(finalId);
-				for (const ch of chapters) {
-					insertChapter.run(
-						randomUUID(),
-						finalId,
-						ch.number,
-						ch.title,
-						join(finalDir, chapterFilename(ch)),
-						ch.kind
-					);
+
+				// Reconcile chapters by number: update existing rows in place
+				// (preserving their ids), insert genuinely-new numbers, archive
+				// the ones that changed.
+				for (const inc of chapters) {
+					const ex = existingByNumber.get(inc.number);
+					const path = join(finalDir, chapterFilename(inc));
+					const newHash = hashChapterContent(inc.html, finalId);
+					if (ex) {
+						updateChapter.run(inc.title, path, inc.kind, newHash, ex.id);
+						const plan = archiveByChapterId.get(ex.id);
+						if (plan) {
+							insertHistory.run(
+								plan.chapterId,
+								plan.previousHash,
+								plan.previousPath,
+								plan.wordCount
+							);
+							stampEdited.run(ex.id);
+						}
+					} else {
+						insertChapter.run(randomUUID(), finalId, inc.number, inc.title, path, inc.kind, newHash);
+					}
 				}
+				// Drop existing rows whose number vanished from the new upload
+				// (only wrappers in practice — they carry no history rows, so
+				// the cascade can't lose an archive).
+				for (const ex of existingChapters) {
+					if (!incomingNumbers.has(ex.number)) deleteChapter.run(ex.id);
+				}
+
 				// Rewrite ONLY this work's work_tags. upsertTag keeps shared
 				// tags rows (and thus tag_aliases edges + hide flags) intact.
 				deleteWorkTags.run(finalId);
@@ -324,8 +420,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			throw new IngestError('Failed to record work', 'db', { cause: e });
 		}
 
-		// DB committed; move the new content into place (old dir kept until
-		// the swap succeeds). content_path already points at finalDir.
+		// DB committed; move the new content (including _history) into place.
+		// content_path + previous_path already point at finalDir.
 		try {
 			swapWorkDir(finalDir, stagingDir);
 		} catch (e) {
@@ -364,8 +460,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
-		`INSERT INTO chapters (id, work_id, number, title, content_path, kind)
-		 VALUES (?, ?, ?, ?, ?, ?)`
+		`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`
 	);
 
 	try {
@@ -381,13 +477,17 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				contentHash
 			);
 			for (const ch of parsed.chapters) {
+				// Stamp per-chapter content_hash from creation so future
+				// update-in-place edit detection has a stored baseline (it
+				// still falls back to reading the file, so this is additive).
 				insertChapter.run(
 					randomUUID(),
 					work_id,
 					ch.number,
 					ch.title,
 					join(workDir, chapterFilename(ch)),
-					ch.kind
+					ch.kind,
+					hashChapterContent(ch.html, work_id)
 				);
 			}
 			for (const tag of parsed.tags) {
