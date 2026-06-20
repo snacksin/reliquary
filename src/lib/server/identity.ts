@@ -39,6 +39,32 @@ function normalizeChapterHtml(html: string, workId: string): string {
 	return html.split(`/api/works/${workId}/images/`).join('/__img__/');
 }
 
+/**
+ * Per-chapter content hash (Chapter History Part 1). sha256 over one
+ * chapter's HTML with the per-work image-URL prefix normalized out, so
+ * it's id-stable across an update-in-place that re-points image srcs
+ * from the parse id to the existing work id. Used both to detect that a
+ * chapter changed and to stamp `chapters.content_hash` /
+ * `chapter_history.previous_hash`.
+ */
+export function hashChapterContent(html: string, workId: string): string {
+	return createHash('sha256').update(normalizeChapterHtml(html, workId)).digest('hex');
+}
+
+/**
+ * Word count of a chapter's HTML, for `chapter_history.word_count`.
+ * Strips tags + entity refs, then counts whitespace-delimited tokens.
+ * Approximate by design (AO3 HTML, not prose) — good enough for the
+ * "+/- N words" delta Part 2's history view will show.
+ */
+export function countWords(html: string): number {
+	const text = html
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&[a-z#0-9]+;/gi, ' ');
+	const tokens = text.trim().match(/\S+/g);
+	return tokens ? tokens.length : 0;
+}
+
 export function computeContentHash(
 	workId: string,
 	title: string,
