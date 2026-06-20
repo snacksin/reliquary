@@ -241,6 +241,30 @@ export function extractPrefaceTags(html: string): ParsedTag[] {
 }
 
 /**
+ * Extract the canonical AO3 work URL from a preface's HTML (M2.3 Step 2,
+ * the dedup identity key). AO3 EPUB prefaces carry a message block —
+ * "Posted originally on the <a href="https://archiveofourown.org/">
+ * Archive of Our Own</a> at <a href="https://archiveofourown.org/works/
+ * <id>">…</a>." — where the SECOND link is the work's public URL.
+ *
+ * We anchor on "Posted originally" and grab the next `/works/<digits>`,
+ * which skips the bare-domain link before it and ignores any unrelated
+ * `/tags/` or `/series/` links. Only the numeric id is captured; the
+ * canonical string is rebuilt from scratch, so any `/chapters/<cid>`
+ * suffix, query string, or trailing slash on the source href is
+ * discarded by construction.
+ *
+ * Returns `null` for non-AO3 prefaces (e.g. FicHub exports, which link
+ * to fichub.net) — those rely on content_hash for identity instead.
+ */
+export function extractCanonicalAo3Url(prefaceHtml: string): string | null {
+	if (!prefaceHtml) return null;
+	const m = prefaceHtml.match(/Posted originally[\s\S]*?archiveofourown\.org\/works\/(\d+)/i);
+	if (!m) return null;
+	return `https://archiveofourown.org/works/${m[1]}`;
+}
+
+/**
  * Rewrite the sentinel image-src prefix epub2 emitted in chapter HTML
  * to point at this server's images endpoint for the given work.
  *
