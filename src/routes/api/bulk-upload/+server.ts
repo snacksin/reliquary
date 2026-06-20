@@ -16,8 +16,10 @@ import { ingestEpub, IngestError } from '$lib/server/ingest';
  *     — emitted BEFORE each file is processed so the client can show
  *       "Uploading 3 of 12: foo.epub" before the long-running parse.
  *
- *   {"type":"done","uploaded":[{work_id,filename},…],"failed":[{filename,reason},…]}
- *     — emitted ONCE at the end. Shape matches the M2.1 §8 AC.
+ *   {"type":"done","uploaded":[{work_id,filename},…],"skipped":[{filename,reason},…],"failed":[{filename,reason},…]}
+ *     — emitted ONCE at the end. M2.3 Step 3 adds `skipped` for dedup
+ *       rejects (already-in-library / library-copy-is-newer); `failed`
+ *       stays for genuine ingest errors, `uploaded` for created+updated.
  *
  * Streaming was chosen over a single aggregated JSON response because
  * the AC explicitly asks for per-file progress feedback, which is only
@@ -51,6 +53,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const uploaded: { work_id: string; filename: string }[] = [];
+	const skipped: { filename: string; reason: string }[] = [];
 	const failed: { filename: string; reason: string }[] = [];
 
 	const stream = new ReadableStream<Uint8Array>({
@@ -86,8 +89,17 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 
 				try {
-					const { work_id } = await ingestEpub(buffer, `bulk:${i + 1}/${files.length} ${filename}`);
-					uploaded.push({ work_id, filename });
+					const r = await ingestEpub(buffer, `bulk:${i + 1}/${files.length} ${filename}`);
+					// M2.3 Step 3: created/updated = real imports; duplicate/stale
+					// are dedup rejects (skipped, NOT failed); genuine errors throw
+					// IngestError and land in failed below.
+					if (r.status === 'created' || r.status === 'updated') {
+						uploaded.push({ work_id: r.work_id, filename });
+					} else if (r.status === 'duplicate') {
+						skipped.push({ filename, reason: 'Already in library' });
+					} else {
+						skipped.push({ filename, reason: 'Library copy is newer' });
+					}
 				} catch (e) {
 					const reason =
 						e instanceof IngestError
@@ -101,7 +113,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 			}
 
-			send({ type: 'done', uploaded, failed });
+			send({ type: 'done', uploaded, skipped, failed });
 			controller.close();
 		}
 	});

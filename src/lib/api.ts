@@ -99,7 +99,25 @@ export async function listAllWorks(fetch: Fetch, opts?: ListOpts): Promise<Work[
 	return res.json();
 }
 
-export async function uploadEpub(file: File, fetch: Fetch): Promise<{ work_id: string }> {
+/**
+ * Outcome of a single upload after M2.3 Step 3 dedup. `created`/`updated`
+ * changed the library; `duplicate`/`stale` were rejected (no new row) and
+ * carry the existing work's id+title so the UI can link to it. Mirrors
+ * the server's IngestResult.
+ */
+export type UploadOutcome =
+	| { status: 'created' | 'updated'; work_id: string; title: string }
+	| { status: 'duplicate'; work_id: string; title: string; restored: boolean }
+	| {
+			status: 'stale';
+			work_id: string;
+			title: string;
+			existingChapters: number;
+			incomingChapters: number;
+			restored: boolean;
+	  };
+
+export async function uploadEpub(file: File, fetch: Fetch): Promise<UploadOutcome> {
 	const fd = new FormData();
 	fd.append('file', file);
 	const res = await fetch('/api/upload', { method: 'POST', body: fd });

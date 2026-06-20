@@ -17,6 +17,10 @@
 	let fileInput: HTMLInputElement | undefined = $state();
 	let uploading = $state(false);
 	let errorMessage: string | null = $state(null);
+	// M2.3 Step 3: a neutral (non-error) notice for dedup outcomes —
+	// "already in library" / "library copy is newer" / "updated with new
+	// chapters" — with an optional link to the affected work.
+	let uploadNotice: { text: string; href?: string } | null = $state(null);
 
 	// Continue Reading: most-recently-read first. /api/works orders by
 	// upload date (ingested_at DESC), which would surface freshly
@@ -76,8 +80,28 @@
 		if (!file) return;
 		uploading = true;
 		errorMessage = null;
+		uploadNotice = null;
 		try {
-			await uploadEpub(file, fetch);
+			const result = await uploadEpub(file, fetch);
+			// Distinct, friendly messaging per dedup outcome. `created` is
+			// silent — the fic simply appears in the list (unchanged UX).
+			const trashSuffix = 'restored' in result && result.restored ? ' — restored from Trash' : '';
+			if (result.status === 'updated') {
+				uploadNotice = {
+					text: `Updated “${result.title}” with new chapters.`,
+					href: `/works/${result.work_id}`
+				};
+			} else if (result.status === 'duplicate') {
+				uploadNotice = {
+					text: `“${result.title}” is already in your library${trashSuffix}.`,
+					href: `/works/${result.work_id}`
+				};
+			} else if (result.status === 'stale') {
+				uploadNotice = {
+					text: `Your library copy of “${result.title}” is newer (${result.existingChapters} chapters vs ${result.incomingChapters}) — keeping it${trashSuffix}.`,
+					href: `/works/${result.work_id}`
+				};
+			}
 			await invalidateAll();
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : 'Upload failed';
@@ -157,6 +181,22 @@
 		<BulkUploadButton />
 		{#if errorMessage}
 			<p class="error">{errorMessage}</p>
+		{/if}
+		{#if uploadNotice}
+			<p class="notice">
+				{uploadNotice.text}
+				{#if uploadNotice.href}
+					<a href={uploadNotice.href}>View</a>
+				{/if}
+				<button
+					type="button"
+					class="notice-dismiss"
+					onclick={() => (uploadNotice = null)}
+					aria-label="Dismiss"
+				>
+					×
+				</button>
+			</p>
 		{/if}
 	</header>
 
@@ -356,8 +396,46 @@
 		cursor: progress;
 	}
 	.error {
+		flex-basis: 100%;
 		color: #b00;
 		margin: 0.5rem 0 0;
+	}
+	/* Neutral dedup notice (already-in-library / newer / updated), distinct
+	   from the red .error. Full-width row inside the flex header. */
+	.notice {
+		flex-basis: 100%;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		margin: 0.5rem 0 0;
+		padding: 0.4rem 0.7rem;
+		background: var(--reader-card-bg);
+		border-radius: 4px;
+		font-size: 0.9rem;
+		color: var(--reader-fg);
+	}
+	.notice a {
+		color: var(--reader-link);
+	}
+	.notice-dismiss {
+		margin-left: auto;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		border: none;
+		border-radius: 50%;
+		background: transparent;
+		color: var(--reader-muted);
+		font-size: 16px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.6;
+	}
+	.notice-dismiss:hover,
+	.notice-dismiss:focus-visible {
+		opacity: 1;
+		color: var(--reader-heart);
 	}
 
 	.left-col {
