@@ -14,6 +14,7 @@
 	type Progress = { current: number; total: number; filename: string };
 	type BulkResult = {
 		uploaded: { work_id: string; filename: string }[];
+		skipped: { filename: string; reason: string }[];
 		failed: { filename: string; reason: string }[];
 	};
 
@@ -22,7 +23,7 @@
 	let progress = $state<Progress | null>(null);
 	let result = $state<BulkResult | null>(null);
 	let errorMsg = $state<string | null>(null);
-	let showFailures = $state(false);
+	let showDetails = $state(false);
 
 	/**
 	 * Stream the NDJSON response, accumulating messages into UI state.
@@ -64,7 +65,12 @@
 						'type' in msg &&
 						(msg as { type: string }).type === 'done'
 					) {
-						result = msg as unknown as BulkResult;
+						const done = msg as unknown as Partial<BulkResult>;
+						result = {
+							uploaded: done.uploaded ?? [],
+							skipped: done.skipped ?? [],
+							failed: done.failed ?? []
+						};
 					}
 				}
 			}
@@ -79,7 +85,7 @@
 		progress = { current: 0, total: files.length, filename: '' };
 		result = null;
 		errorMsg = null;
-		showFailures = false;
+		showDetails = false;
 
 		const fd = new FormData();
 		for (const f of files) fd.append('file', f);
@@ -124,7 +130,7 @@
 		progress = null;
 		result = null;
 		errorMsg = null;
-		showFailures = false;
+		showDetails = false;
 	}
 </script>
 
@@ -156,14 +162,15 @@
 		<div class="summary" aria-live="polite">
 			<p class="summary-line">
 				<strong>{result.uploaded.length}</strong> uploaded
+				{#if result.skipped.length > 0}
+					· <strong>{result.skipped.length}</strong> skipped
+				{/if}
 				{#if result.failed.length > 0}
 					· <strong>{result.failed.length}</strong> failed
-					<button
-						type="button"
-						class="link"
-						onclick={() => (showFailures = !showFailures)}
-					>
-						{showFailures ? 'Hide' : 'Show'} details
+				{/if}
+				{#if result.skipped.length > 0 || result.failed.length > 0}
+					<button type="button" class="link" onclick={() => (showDetails = !showDetails)}>
+						{showDetails ? 'Hide' : 'Show'} details
 					</button>
 				{/if}
 				<button
@@ -175,12 +182,13 @@
 					×
 				</button>
 			</p>
-			{#if showFailures && result.failed.length > 0}
+			{#if showDetails && (result.skipped.length > 0 || result.failed.length > 0)}
 				<ul class="failures">
-					{#each result.failed as f (f.filename)}
-						<li>
-							<code>{f.filename}</code> — {f.reason}
-						</li>
+					{#each result.skipped as item (item.filename)}
+						<li><code>{item.filename}</code> — skipped: {item.reason}</li>
+					{/each}
+					{#each result.failed as item (item.filename)}
+						<li><code>{item.filename}</code> — failed: {item.reason}</li>
 					{/each}
 				</ul>
 			{/if}

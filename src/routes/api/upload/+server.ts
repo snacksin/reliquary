@@ -23,8 +23,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	const buffer = Buffer.from(await file.arrayBuffer());
 
 	try {
-		const { work_id } = await ingestEpub(buffer, file.name);
-		return json({ work_id });
+		// M2.3 Step 3: the result is a discriminated outcome (created /
+		// updated / duplicate / stale). All four are 200s — duplicate and
+		// stale aren't HTTP errors (the client renders a friendly notice
+		// and needs the existing work_id to link). Genuine parse/write/db
+		// failures still throw IngestError below.
+		const result = await ingestEpub(buffer, file.name);
+		return json(result);
 	} catch (e) {
 		if (e instanceof IngestError) {
 			// `parse` → bad input from the client; everything else → server-side
