@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from './db';
-import { parseEpub, type ParsedChapter } from './epub';
+import { extractCanonicalAo3Url, parseEpub, type ParsedChapter } from './epub';
+import { computeContentHash } from './identity';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -105,11 +106,19 @@ export async function ingestEpub(
 		throw new IngestError('Failed to write work files', 'write', { cause: e });
 	}
 
+	// M2.3 Step 2: compute dedup identity. source_url from the preface's
+	// AO3 link (null for non-AO3 fics); content_hash over the normalized
+	// real-chapter content (see identity.ts for the exact input). Step 2
+	// only RECORDS these — duplicate detection lands in Step 3.
+	const prefaceChapter = parsed.chapters.find((c) => c.kind === 'preface');
+	const sourceUrl = extractCanonicalAo3Url(prefaceChapter?.html ?? '');
+	const contentHash = computeContentHash(work_id, parsed.title, parsed.author, parsed.chapters);
+
 	const db = getDb();
 
 	const insertWork = db.prepare(
-		`INSERT INTO works (id, title, author, summary, chapter_count, word_count)
-		 VALUES (?, ?, ?, ?, ?, ?)`
+		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind)
@@ -142,7 +151,9 @@ export async function ingestEpub(
 				parsed.author,
 				parsed.summary,
 				parsed.chapterCount,
-				null
+				null,
+				sourceUrl,
+				contentHash
 			);
 			for (const ch of parsed.chapters) {
 				insertChapter.run(
