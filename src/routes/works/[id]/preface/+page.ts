@@ -4,7 +4,7 @@ import { getPrefaceHtml } from '$lib/api';
 
 export const load: PageLoad = async ({ params, fetch }) => {
 	try {
-		return { html: await getPrefaceHtml(params.id, fetch) };
+		return { html: await getPrefaceHtml(params.id, fetch), workId: params.id };
 	} catch (e) {
 		throw error(404, e instanceof Error ? e.message : 'preface not found');
 	}

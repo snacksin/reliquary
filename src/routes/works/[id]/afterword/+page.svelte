@@ -7,4 +7,4 @@
 
 <svelte:head><title>Reliquary — End notes</title></svelte:head>
 
-<Reader html={data.html} />
+<Reader html={data.html} workId={data.workId} />

@@ -7,4 +7,4 @@
 
 <svelte:head><title>Reliquary — Tags & metadata</title></svelte:head>
 
-<Reader html={data.html} />
+<Reader html={data.html} workId={data.workId} />
