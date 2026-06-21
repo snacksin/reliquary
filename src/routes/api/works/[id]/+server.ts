@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
+import { purgeWork } from '$lib/server/purge';
 
 export const GET: RequestHandler = ({ params }) => {
 	const db = getDb();
@@ -8,7 +9,7 @@ export const GET: RequestHandler = ({ params }) => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			   w.favorited_at,
+			   w.favorited_at, w.trashed_at,
 			   rp.last_chapter, rp.last_scroll_y,
 			   rp.updated_at AS last_updated_at
 			 FROM works w
@@ -24,6 +25,7 @@ export const GET: RequestHandler = ({ params }) => {
 				chapter_count: number;
 				word_count: number | null;
 				favorited_at: string | null;
+				trashed_at: string | null;
 				last_chapter: number | null;
 				last_scroll_y: number | null;
 				last_updated_at: string | null;
@@ -56,6 +58,7 @@ export const GET: RequestHandler = ({ params }) => {
 		word_count: row.word_count,
 		is_favorite: row.favorited_at !== null,
 		favorited_at: row.favorited_at,
+		trashed_at: row.trashed_at,
 		has_history: hasHistory,
 		last_read:
 			row.last_chapter !== null && row.last_scroll_y !== null && row.last_updated_at !== null
@@ -86,4 +89,28 @@ export const GET: RequestHandler = ({ params }) => {
 		.all(params.id);
 
 	return json({ ...work, chapters });
+};
+
+/**
+ * `DELETE /api/works/[id]` — permanent delete (M2.3 Step 5).
+ *
+ * Hard delete is allowed ONLY from Trash: the work must already have
+ * `trashed_at` set. A live work returns 409 — you can't bypass the
+ * soft-trash safety window (preservation principle: removal is
+ * deliberate, never accidental). 404 if the work doesn't exist.
+ *
+ * Delegates to the shared `purgeWork` path (DB cascade + FTS trigger +
+ * on-disk dir removal), the same code Step 6's purge-on-start reuses.
+ */
+export const DELETE: RequestHandler = ({ params }) => {
+	const db = getDb();
+	const row = db.prepare('SELECT trashed_at FROM works WHERE id = ?').get(params.id) as
+		| { trashed_at: string | null }
+		| undefined;
+	if (!row) throw error(404, 'work not found');
+	if (row.trashed_at === null) {
+		throw error(409, 'work is not in Trash — move it to Trash before deleting permanently');
+	}
+	purgeWork(db, params.id);
+	return new Response(null, { status: 204 });
 };

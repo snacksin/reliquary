@@ -143,6 +143,7 @@
 			-->
 			<nav class="panel-nav">
 				<a href="/tags" onclick={() => (open = false)}>Manage tags →</a>
+				<a href="/trash" onclick={() => (open = false)}>Trash →</a>
 			</nav>
 		</form>
 	</div>
@@ -229,7 +230,10 @@
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--reader-border);
-		text-align: right;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.4rem;
 	}
 	.panel-nav a {
 		color: var(--reader-link);
