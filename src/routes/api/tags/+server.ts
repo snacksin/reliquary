@@ -88,11 +88,16 @@ export const GET: RequestHandler = ({ url }) => {
 		whereClauses.push(`NOT ${hiddenExpr}`);
 	}
 
+	// M2.3 Step 4: trashed works don't inflate sidebar counts. The join
+	// only matches work_tags whose work is live, so COUNT(wt.work_id)
+	// counts non-trashed links (a tag whose works are all trashed drops
+	// to 0, same as any unused tag).
 	const sql = `
 		SELECT t.id, t.category, t.name, t.created_at, COUNT(wt.work_id) AS count,
 		       ${hiddenExpr} AS hidden_from_sidebar
 		 FROM tags t
 		 LEFT JOIN work_tags wt ON wt.tag_id = t.id
+		   AND EXISTS (SELECT 1 FROM works w WHERE w.id = wt.work_id AND w.trashed_at IS NULL)
 		 WHERE ${whereClauses.join(' AND ')}
 		 GROUP BY t.id
 		 ORDER BY t.category ASC, count DESC, t.name ASC`;

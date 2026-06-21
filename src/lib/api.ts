@@ -241,6 +241,22 @@ export async function unsetFavorite(workId: string, fetch: Fetch): Promise<void>
 }
 
 /**
+ * Soft-trash (M2.3 Step 4). `trashWork` hides a work from every
+ * discovery surface; `restoreWork` brings it back non-destructively.
+ * The `/trash` view is Step 5, so restore is currently only reachable
+ * programmatically.
+ */
+export async function trashWork(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/trash`, { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function restoreWork(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/trash`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
  * Client-side mirror of the server's `TagCategory` (kept duplicated
  * because anything under `$lib/server/` is server-only). The seven AO3
  * categories Step 2's parser populates. `personal` is deliberately
