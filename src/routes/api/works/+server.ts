@@ -247,6 +247,13 @@ export const GET: RequestHandler = ({ url }) => {
 	const whereParts: string[] = [];
 	const whereParams: unknown[] = [];
 
+	// M2.3 Step 4: trashed works vanish from every discovery surface.
+	// This sits in the shared `baseSql`, so it covers the paginated rows,
+	// the COUNT(*) total, the `paginate=false` flat array (Continue
+	// Reading + Favorites derive from it), AND the FTS-search path (which
+	// AND-composes here). No param needed.
+	whereParts.push('w.trashed_at IS NULL');
+
 	if (tagIds.length > 0) {
 		whereParts.push(TAG_FILTER_CLAUSE);
 		whereParams.push(JSON.stringify(tagIds), JSON.stringify(matchAll));

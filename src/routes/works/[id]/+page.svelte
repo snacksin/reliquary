@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { setFavorite, unsetFavorite } from '$lib/api';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { setFavorite, unsetFavorite, trashWork } from '$lib/api';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -24,6 +24,47 @@
 	// Cover-slot placeholder glyph: first letter of the title, uppercased.
 	// Mirrors the helper on the library page; v1.5 swaps in real cover art.
 	const glyph = $derived(data.work.title?.[0]?.toUpperCase() ?? '?');
+
+	// ─── Move to Trash (M2.3 Step 4) ────────────────────────────────
+	// Confirm via a native <dialog> (the M2.1.6 idiom: Cancel default-
+	// focused, explicit close(), Esc closes without acting). On confirm
+	// the work is trashed and vanishes from the library, so we navigate
+	// back to it. Restore is API-only until Step 5's /trash view.
+	let trashDialog = $state<HTMLDialogElement | null>(null);
+	let trashCancelEl = $state<HTMLButtonElement | null>(null);
+	let trashError = $state<string | null>(null);
+	let trashing = $state(false);
+
+	function openTrashDialog() {
+		trashError = null;
+		trashDialog?.showModal();
+		queueMicrotask(() => trashCancelEl?.focus());
+	}
+
+	function closeTrashDialog() {
+		trashDialog?.close();
+	}
+
+	function trashDialogKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			closeTrashDialog();
+		}
+	}
+
+	async function confirmTrash() {
+		trashing = true;
+		trashError = null;
+		try {
+			await trashWork(data.work.id, fetch);
+			closeTrashDialog();
+			await goto('/');
+		} catch (e) {
+			trashError = e instanceof Error ? e.message : 'Failed to move to Trash';
+		} finally {
+			trashing = false;
+		}
+	}
 
 	// Short date for the "Updated · <date>" chapter pills (Part 2/3). The
 	// date is when the edit was detected on re-upload, not the author's
@@ -126,7 +167,37 @@
 			<a href="/works/{data.work.id}/afterword">End notes</a>
 		</p>
 	{/if}
+
+	<div class="danger-zone">
+		<button type="button" class="trash-button" onclick={openTrashDialog}>
+			Move to Trash
+		</button>
+	</div>
 </main>
+
+<dialog
+	bind:this={trashDialog}
+	class="trash-dialog"
+	onkeydown={trashDialogKeydown}
+	onclose={() => (trashError = null)}
+>
+	<h2>Move to Trash?</h2>
+	<p>
+		“{data.work.title}” will be hidden from your library, search, and filters. Nothing is
+		deleted — you can restore it.
+	</p>
+	{#if trashError}
+		<p class="dialog-error" role="alert">{trashError}</p>
+	{/if}
+	<div class="dialog-actions">
+		<button type="button" class="secondary" bind:this={trashCancelEl} onclick={closeTrashDialog}>
+			Cancel
+		</button>
+		<button type="button" class="danger" onclick={confirmTrash} disabled={trashing}>
+			{trashing ? 'Moving…' : 'Move to Trash'}
+		</button>
+	</div>
+</dialog>
 
 <style>
 	main {
@@ -323,5 +394,89 @@
 	}
 	.wrapper-link a:hover {
 		text-decoration: underline;
+	}
+
+	/* Destructive action, set apart at the bottom of the page and kept
+	   quiet until hovered so it never competes with the reading actions. */
+	.danger-zone {
+		margin-top: 2.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--reader-border);
+	}
+	.trash-button {
+		background: none;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		color: var(--reader-muted);
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.35rem 0.7rem;
+		cursor: pointer;
+	}
+	.trash-button:hover,
+	.trash-button:focus-visible {
+		border-color: var(--reader-heart);
+		color: var(--reader-heart);
+	}
+
+	/* Confirm dialog — same native-<dialog> chrome as the /tags
+	   group/hide dialogs. */
+	.trash-dialog {
+		max-width: 420px;
+		width: 90vw;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		background: var(--reader-bg);
+		color: var(--reader-fg);
+		padding: 1.25rem 1.5rem;
+		font-family: system-ui, sans-serif;
+	}
+	.trash-dialog::backdrop {
+		background: rgba(0, 0, 0, 0.4);
+	}
+	.trash-dialog h2 {
+		font-size: 1.05rem;
+		margin: 0 0 0.75rem;
+		font-weight: 600;
+	}
+	.trash-dialog p {
+		font-size: 0.9rem;
+		line-height: 1.5;
+		margin: 0 0 1rem;
+	}
+	.dialog-error {
+		color: #b00;
+	}
+	.dialog-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+	.dialog-actions button {
+		font: inherit;
+		font-size: 0.9rem;
+		padding: 6px 14px;
+		border-radius: 4px;
+		cursor: pointer;
+	}
+	.dialog-actions .secondary {
+		background: transparent;
+		color: var(--reader-fg);
+		border: 1px solid var(--reader-border);
+	}
+	.dialog-actions .secondary:hover {
+		background: var(--reader-card-bg);
+	}
+	.dialog-actions .danger {
+		background: var(--reader-heart);
+		color: #fff;
+		border: 1px solid var(--reader-heart);
+	}
+	.dialog-actions .danger:hover {
+		opacity: 0.9;
+	}
+	.dialog-actions .danger:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>
