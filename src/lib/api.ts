@@ -30,6 +30,13 @@ export type Work = {
 	 * drives the detail page's 📜 History button visibility.
 	 */
 	has_history?: boolean;
+	/**
+	 * Soft-trash (M2.3): non-null = in Trash (the timestamp it was
+	 * trashed). Only present on the work-detail response; drives the
+	 * detail page's trashed banner. Trashed works are excluded from all
+	 * listing endpoints, so it's effectively always null elsewhere.
+	 */
+	trashed_at?: string | null;
 };
 
 type Fetch = typeof fetch;
@@ -254,6 +261,52 @@ export async function trashWork(workId: string, fetch: Fetch): Promise<void> {
 export async function restoreWork(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/trash`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** One trashed work, as listed by `GET /api/trash` (M2.3 Step 5). */
+export type TrashedWork = {
+	id: string;
+	title: string;
+	author: string;
+	trashed_at: string;
+};
+
+export async function getTrash(fetch: Fetch): Promise<TrashedWork[]> {
+	const res = await fetch('/api/trash');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * Permanent delete of a single work (M2.3 Step 5). Irreversible — the
+ * server only allows it on works already in Trash (409 otherwise).
+ */
+export async function purgeWork(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Empty Trash — permanently delete every trashed work. Returns the count. */
+export async function emptyTrash(fetch: Fetch): Promise<{ purged: number }> {
+	const res = await fetch('/api/trash', { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * Whole days remaining before a trashed work is purged. Mirrors the
+ * server's `PURGE_AFTER_DAYS` (30, in src/lib/server/purge.ts) — kept as
+ * a literal here so this client util doesn't import the server module.
+ * Clamped at 0 (an over-30-day work is due for purge on next boot).
+ */
+export function daysUntilPurge(trashedAtIso: string): number {
+	const PURGE_AFTER_DAYS = 30;
+	const trashedAt = new Date(
+		trashedAtIso.includes('T') ? trashedAtIso : trashedAtIso.replace(' ', 'T') + 'Z'
+	).getTime();
+	if (Number.isNaN(trashedAt)) return PURGE_AFTER_DAYS;
+	const daysSince = (Date.now() - trashedAt) / 86_400_000;
+	return Math.max(0, Math.ceil(PURGE_AFTER_DAYS - daysSince));
 }
 
 /**

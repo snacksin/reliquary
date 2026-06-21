@@ -1,10 +1,29 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
-	import { setFavorite, unsetFavorite, trashWork } from '$lib/api';
+	import { setFavorite, unsetFavorite, trashWork, restoreWork, daysUntilPurge } from '$lib/api';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// Soft-trash state (M2.3 Step 5). When trashed, the page shows a
+	// banner with a Restore action instead of the Move-to-Trash button.
+	const isTrashed = $derived(data.work.trashed_at != null);
+	let restoring = $state(false);
+	let restoreError = $state<string | null>(null);
+
+	async function handleRestore() {
+		restoring = true;
+		restoreError = null;
+		try {
+			await restoreWork(data.work.id, fetch);
+			await invalidateAll();
+		} catch (e) {
+			restoreError = e instanceof Error ? e.message : 'Restore failed';
+		} finally {
+			restoring = false;
+		}
+	}
 
 	// The numbered chapter list shows only real chapters; the preface
 	// ("Tags & metadata") and afterword ("End notes") are surfaced as
@@ -101,6 +120,21 @@
 
 <main>
 	<p class="back"><a href="/">← Library</a></p>
+	{#if isTrashed}
+		<div class="trash-banner" role="status">
+			<span>
+				This fic is in Trash — will be permanently deleted in {daysUntilPurge(
+					data.work.trashed_at!
+				)} days.
+			</span>
+			<button type="button" class="restore-button" onclick={handleRestore} disabled={restoring}>
+				{restoring ? 'Restoring…' : 'Restore'}
+			</button>
+		</div>
+		{#if restoreError}
+			<p class="error">{restoreError}</p>
+		{/if}
+	{/if}
 	<div class="detail-header">
 		<div class="cover-slot" aria-hidden="true">
 			<span class="cover-glyph">{glyph}</span>
@@ -168,11 +202,13 @@
 		</p>
 	{/if}
 
-	<div class="danger-zone">
-		<button type="button" class="trash-button" onclick={openTrashDialog}>
-			Move to Trash
-		</button>
-	</div>
+	{#if !isTrashed}
+		<div class="danger-zone">
+			<button type="button" class="trash-button" onclick={openTrashDialog}>
+				Move to Trash
+			</button>
+		</div>
+	{/if}
 </main>
 
 <dialog
@@ -394,6 +430,42 @@
 	}
 	.wrapper-link a:hover {
 		text-decoration: underline;
+	}
+
+	/* Trashed-state banner (M2.3 Step 5). Sits at the top of the detail
+	   page; the Restore button is the in-place undo. Themed via
+	   --reader-* so it reads on all three themes. */
+	.trash-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin: 0 0 1rem;
+		padding: 0.6rem 0.9rem;
+		background: var(--reader-card-bg);
+		border: 1px solid var(--reader-heart);
+		border-radius: 6px;
+		font-size: 0.9rem;
+	}
+	.restore-button {
+		flex: 0 0 auto;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.35rem 0.8rem;
+		border: 1px solid var(--reader-fg);
+		border-radius: 4px;
+		background: var(--reader-fg);
+		color: var(--reader-bg);
+		cursor: pointer;
+	}
+	.restore-button:hover:not(:disabled) {
+		background: var(--reader-accent);
+		border-color: var(--reader-accent);
+	}
+	.restore-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	/* Destructive action, set apart at the bottom of the page and kept
