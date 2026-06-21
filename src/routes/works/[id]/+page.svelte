@@ -25,6 +25,14 @@
 	// Mirrors the helper on the library page; v1.5 swaps in real cover art.
 	const glyph = $derived(data.work.title?.[0]?.toUpperCase() ?? '?');
 
+	// Short date for the "author edited · <date>" chapter pills (Part 2).
+	function shortDate(iso: string): string {
+		const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+		return Number.isNaN(d.getTime())
+			? iso
+			: d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
+
 	async function toggleFavorite() {
 		const next = !isFavorite;
 		pendingFavorite = next;
@@ -57,6 +65,11 @@
 		<div class="detail-header-text">
 			<div class="title-row">
 				<h1>{data.work.title}</h1>
+				{#if data.work.has_history}
+					<a class="history-button" href="/works/{data.work.id}/history" title="View chapter edit history">
+						<span aria-hidden="true">📜</span> History
+					</a>
+				{/if}
 				<button
 					class="heart"
 					class:filled={isFavorite}
@@ -98,6 +111,11 @@
 				<a href="/works/{data.work.id}/ch/{ch.number}">
 					{#if ch.title}{ch.title}{:else}<em>untitled</em>{/if}
 				</a>
+				{#if ch.last_edited_at}
+					<span class="edited-pill" title="This chapter has archived earlier versions">
+						author edited · {shortDate(ch.last_edited_at)}
+					</span>
+				{/if}
 			</li>
 		{/each}
 	</ol>
@@ -160,6 +178,27 @@
 		display: flex;
 		align-items: flex-start;
 		gap: 0.75rem;
+	}
+	/* 📜 History button — sits between the title and the heart, themed
+	   like the other detail-page chrome. Only rendered when the work has
+	   archived chapter versions (Part 2). */
+	.history-button {
+		flex: 0 0 auto;
+		align-self: center;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.35rem 0.7rem;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-card-bg);
+		color: var(--reader-fg);
+		text-decoration: none;
+		font-size: 0.85rem;
+		white-space: nowrap;
+	}
+	.history-button:hover {
+		border-color: var(--reader-accent);
 	}
 	h1 {
 		font-size: 1.6rem;
@@ -261,6 +300,18 @@
 	}
 	ol.chapters a:hover {
 		text-decoration: underline;
+	}
+	/* "author edited · <date>" pill — surfaces that a chapter has archived
+	   prior versions (Part 2). Muted so it doesn't compete with the title. */
+	.edited-pill {
+		margin-left: 0.5rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		background: var(--reader-card-bg);
+		color: var(--reader-muted);
+		font-size: 0.72rem;
+		white-space: nowrap;
+		vertical-align: middle;
 	}
 	.wrapper-link {
 		font-size: 0.9rem;

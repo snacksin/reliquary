@@ -24,6 +24,12 @@ export type Work = {
 	 * Null when `is_favorite` is false.
 	 */
 	favorited_at: string | null;
+	/**
+	 * Chapter History (Part 2): true when ≥1 chapter of this work has an
+	 * archived prior version. Only present on the work-detail response;
+	 * drives the detail page's 📜 History button visibility.
+	 */
+	has_history?: boolean;
 };
 
 type Fetch = typeof fetch;
@@ -130,13 +136,57 @@ export async function uploadEpub(file: File, fetch: Fetch): Promise<UploadOutcom
 export type ChapterKind = 'preface' | 'summary' | 'chapter' | 'afterword';
 
 export type WorkDetail = Work & {
-	chapters: { number: number; title: string | null; kind: ChapterKind }[];
+	chapters: {
+		number: number;
+		title: string | null;
+		kind: ChapterKind;
+		/** Chapter History (Part 2): set when this chapter has been edited
+		 *  (≥1 archived version). Drives the "author edited · date" pill. */
+		last_edited_at: string | null;
+	}[];
 };
 
 export async function getWork(id: string, fetch: Fetch): Promise<WorkDetail> {
 	const res = await fetch(`/api/works/${id}`);
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+// ─── Chapter History (Part 2) ───────────────────────────────────────
+
+/** One archived prior version of a chapter (from GET /api/works/[id]/history). */
+export type ChapterArchive = {
+	archive_id: number;
+	archived_at: string;
+	word_count: number | null;
+	/** +/- words vs the version that replaced this one (null if unknown). */
+	word_delta: number | null;
+	hash_short: string;
+};
+
+/** Archived versions of one chapter, newest-first. */
+export type ChapterHistoryGroup = {
+	number: number;
+	title: string | null;
+	archives: ChapterArchive[];
+};
+
+export type WorkHistory = { groups: ChapterHistoryGroup[] };
+
+export async function getWorkHistory(id: string, fetch: Fetch): Promise<WorkHistory> {
+	const res = await fetch(`/api/works/${id}/history`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+export async function getArchivedHtml(
+	id: string,
+	archiveId: number | string,
+	fetch: Fetch
+): Promise<string> {
+	const res = await fetch(`/api/works/${id}/history/${archiveId}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.text();
 }
 
 export async function getChapterHtml(
