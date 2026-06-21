@@ -25,7 +25,9 @@
 	// Mirrors the helper on the library page; v1.5 swaps in real cover art.
 	const glyph = $derived(data.work.title?.[0]?.toUpperCase() ?? '?');
 
-	// Short date for the "author edited · <date>" chapter pills (Part 2).
+	// Short date for the "Updated · <date>" chapter pills (Part 2/3). The
+	// date is when the edit was detected on re-upload, not the author's
+	// real AO3 edit date — hence "Updated" rather than "author edited".
 	function shortDate(iso: string): string {
 		const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
 		return Number.isNaN(d.getTime())
@@ -112,8 +114,8 @@
 					{#if ch.title}{ch.title}{:else}<em>untitled</em>{/if}
 				</a>
 				{#if ch.last_edited_at}
-					<span class="edited-pill" title="This chapter has archived earlier versions">
-						author edited · {shortDate(ch.last_edited_at)}
+					<span class="edited-pill" title="This chapter has been updated since it was first saved — earlier versions are kept">
+						Updated · {shortDate(ch.last_edited_at)}
 					</span>
 				{/if}
 			</li>
@@ -301,15 +303,13 @@
 	ol.chapters a:hover {
 		text-decoration: underline;
 	}
-	/* "author edited · <date>" pill — surfaces that a chapter has archived
-	   prior versions (Part 2). Muted so it doesn't compete with the title. */
+	/* "Updated · <date>" label — surfaces that a chapter has archived
+	   prior versions (Part 2/3). Borderless and muted so it reads as quiet
+	   metadata beside the title rather than a competing chip. */
 	.edited-pill {
-		margin-left: 0.5rem;
-		padding: 0.05rem 0.4rem;
-		border-radius: 999px;
-		background: var(--reader-card-bg);
+		margin-left: 0.55rem;
 		color: var(--reader-muted);
-		font-size: 0.72rem;
+		font-size: 0.74rem;
 		white-space: nowrap;
 		vertical-align: middle;
 	}
