@@ -13,6 +13,12 @@ export function getDb(): Database.Database {
 	const db = new Database('data/reliquary.db');
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
+	// Wait up to 5s for a transient write lock to clear instead of
+	// throwing `SQLITE_BUSY: database is locked` immediately. The common
+	// case is DB Browser holding the file open during verification — a
+	// write action (trash/restore, upload) should ride out that brief
+	// lock rather than 500.
+	db.pragma('busy_timeout = 5000');
 
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
