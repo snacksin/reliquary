@@ -2,9 +2,18 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import SettingsPanel from '$lib/SettingsPanel.svelte';
+	import TopNav from '$lib/TopNav.svelte';
 	import { themeStore } from '$lib/theme.svelte';
+	import { page } from '$app/state';
 
 	let { children } = $props();
+
+	// Browse-pages top nav (Author Pages Part 1): only the library and
+	// author pages get the Library | Authors header — never fic detail,
+	// the reader, or the /tags & /trash management pages.
+	const showTopNav = $derived(
+		page.route.id === '/' || (page.route.id ?? '').startsWith('/authors')
+	);
 
 	// Mirror the themeStore reactively onto <html data-theme="..." />.
 	// The inline boot script in app.html sets the attribute synchronously
@@ -32,5 +41,9 @@
 	to-close logic lives inside SettingsPanel.svelte.
 -->
 <SettingsPanel />
+
+{#if showTopNav}
+	<TopNav />
+{/if}
 
 {@render children()}
