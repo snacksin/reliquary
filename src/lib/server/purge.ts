@@ -46,3 +46,32 @@ export function purgeWork(db: Database, id: string): boolean {
 
 	return deleted;
 }
+
+/**
+ * Boot-time auto-purge (M2.3 Step 6). Permanently deletes every work
+ * whose `trashed_at` is older than `PURGE_AFTER_DAYS`, reusing the exact
+ * `purgeWork` path (no second delete path). Non-trashed works are never
+ * selected. Called once per boot from getDb(), guarded so a failure
+ * can't block boot — same pattern as the identity backfill.
+ *
+ * Boundary: `trashed_at < datetime('now', '-30 days')`. Both `trashed_at`
+ * (CURRENT_TIMESTAMP) and `datetime('now')` are UTC, so the 30-day
+ * comparison is consistent. Returns the count purged.
+ */
+export function purgeExpired(db: Database): number {
+	const expired = db
+		.prepare(
+			`SELECT id FROM works
+			  WHERE trashed_at IS NOT NULL
+			    AND trashed_at < datetime('now', ?)`
+		)
+		.all(`-${PURGE_AFTER_DAYS} days`) as { id: string }[];
+
+	let purged = 0;
+	for (const { id } of expired) {
+		if (purgeWork(db, id)) purged += 1;
+	}
+
+	console.log(`[purge] ${purged} works purged`);
+	return purged;
+}
