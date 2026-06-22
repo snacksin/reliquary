@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { backfillIdentity } from './identity';
+import { purgeExpired } from './purge';
 
 let cached: Database.Database | undefined;
 
@@ -53,6 +54,16 @@ export function getDb(): Database.Database {
 		backfillIdentity(db);
 	} catch (e) {
 		console.error('[backfill] failed', e);
+	}
+
+	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more
+	// than PURGE_AFTER_DAYS (30) ago, via the same purgeWork path as the
+	// /trash Delete-forever action. Guarded so a purge failure can never
+	// stop the DB from booting (same pattern as the backfill above).
+	try {
+		purgeExpired(db);
+	} catch (e) {
+		console.error('[purge] failed', e);
 	}
 
 	return db;
