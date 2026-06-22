@@ -285,19 +285,24 @@
 	}
 	.title-row {
 		display: flex;
+		/* Action buttons top-align to the title's first line so they don't
+		   drift to the vertical middle of a wrapped (two-line) title. */
 		align-items: flex-start;
 		gap: 0.75rem;
 	}
 	/* 📜 History button — sits between the title and the heart, themed
 	   like the other detail-page chrome. Only rendered when the work has
-	   archived chapter versions (Part 2). */
+	   archived chapter versions (Part 2). Fixed 38px height matches the
+	   heart so the two read as one inline action row; top-aligned (no
+	   align-self override) so both sit against the title's first line. */
 	.history-button {
 		flex: 0 0 auto;
-		align-self: center;
+		height: 38px;
+		box-sizing: border-box;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
-		padding: 0.35rem 0.7rem;
+		padding: 0 0.7rem;
 		border: 1px solid var(--reader-border);
 		border-radius: 4px;
 		background: var(--reader-card-bg);
