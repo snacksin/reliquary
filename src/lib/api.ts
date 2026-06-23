@@ -59,6 +59,8 @@ type ListOpts = {
 	page?: number;
 	perPage?: number;
 	q?: string;
+	/** Author Pages: scope the listing to one exact author. */
+	author?: string;
 };
 
 function buildListParams(opts: ListOpts | undefined): URLSearchParams {
@@ -72,6 +74,7 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	// `q` is forwarded raw — the server sanitizes for FTS5. Empty
 	// string means "no search filter" (same as omitting the param).
 	if (opts?.q && opts.q.trim()) search.set('q', opts.q);
+	if (opts?.author) search.set('author', opts.author);
 	return search;
 }
 
@@ -355,12 +358,47 @@ export type TagGroups = Record<TagCategory, Tag[]>;
 
 export async function getTags(
 	fetch: Fetch,
-	opts?: { includeHidden?: boolean }
+	opts?: { includeHidden?: boolean; author?: string }
 ): Promise<TagGroups> {
-	const url = opts?.includeHidden ? '/api/tags?include_hidden=true' : '/api/tags';
-	const res = await fetch(url);
+	const params = new URLSearchParams();
+	if (opts?.includeHidden) params.set('include_hidden', 'true');
+	if (opts?.author) params.set('author', opts.author);
+	const qs = params.toString();
+	const res = await fetch(qs ? `/api/tags?${qs}` : '/api/tags');
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+// ─── Author Pages (Part 1) ──────────────────────────────────────────
+
+/** One author in the /authors index. */
+export type Author = {
+	name: string;
+	work_count: number;
+	is_favorite: boolean;
+	favorited_at: string | null;
+};
+
+export async function getAuthors(fetch: Fetch): Promise<Author[]> {
+	const res = await fetch('/api/authors');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * Manual favorite-author toggle — independent of fic favorites. The name
+ * is URL-encoded for the route; the server keys on the exact string.
+ */
+export async function favoriteAuthor(name: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/favorite`, { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function unfavoriteAuthor(name: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/favorite`, {
+		method: 'DELETE'
+	});
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 /**

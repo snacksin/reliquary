@@ -88,21 +88,36 @@ export const GET: RequestHandler = ({ url }) => {
 		whereClauses.push(`NOT ${hiddenExpr}`);
 	}
 
+	// Author Pages Part 1: optional author scope. When present, counts
+	// (and the join's liveness EXISTS) are restricted to that author's
+	// non-trashed works, so the author-detail sidebar shows only that
+	// author's tags with author-scoped counts. Bound param appended only
+	// when scoping.
+	const author = url.searchParams.get('author');
+	const authorClause = author ? ` AND w.author = ?` : '';
+	const params: unknown[] = author ? [author] : [];
+
 	// M2.3 Step 4: trashed works don't inflate sidebar counts. The join
 	// only matches work_tags whose work is live, so COUNT(wt.work_id)
 	// counts non-trashed links (a tag whose works are all trashed drops
 	// to 0, same as any unused tag).
+	// When author-scoped, drop tags the author doesn't use (count 0) so
+	// the author-detail sidebar shows only that author's tags. The global
+	// (unscoped) feed keeps every tag — unchanged from before.
+	const havingClause = author ? 'HAVING count > 0' : '';
+
 	const sql = `
 		SELECT t.id, t.category, t.name, t.created_at, COUNT(wt.work_id) AS count,
 		       ${hiddenExpr} AS hidden_from_sidebar
 		 FROM tags t
 		 LEFT JOIN work_tags wt ON wt.tag_id = t.id
-		   AND EXISTS (SELECT 1 FROM works w WHERE w.id = wt.work_id AND w.trashed_at IS NULL)
+		   AND EXISTS (SELECT 1 FROM works w WHERE w.id = wt.work_id AND w.trashed_at IS NULL${authorClause})
 		 WHERE ${whereClauses.join(' AND ')}
 		 GROUP BY t.id
+		 ${havingClause}
 		 ORDER BY t.category ASC, count DESC, t.name ASC`;
 
-	const rows = db.prepare(sql).all() as Row[];
+	const rows = db.prepare(sql).all(...params) as Row[];
 
 	const groups: Record<Category, OutTag[]> = {
 		rating: [],

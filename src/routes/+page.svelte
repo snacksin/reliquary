@@ -6,7 +6,7 @@
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
 	import SearchInput from '$lib/SearchInput.svelte';
-	import { Heart } from 'lucide-svelte';
+	import WorkRow from '$lib/WorkRow.svelte';
 	import type { PageProps } from './$types';
 
 	const PER_PAGE_OPTIONS = [10, 12, 15] as const;
@@ -296,31 +296,7 @@
 		{:else}
 			<ul class="works">
 				{#each data.filteredPage.works as work (work.id)}
-					<li>
-						<a href="/works/{work.id}" class="library-row">
-							<div class="cover-slot" aria-hidden="true">
-								<span class="cover-glyph">{glyph(work)}</span>
-							</div>
-							<div class="library-row-text">
-								<strong>
-									{work.title}
-									{#if work.is_favorite}
-										<Heart
-											class="fav-indicator"
-											size={14}
-											fill="currentColor"
-											aria-label="Favorited"
-										/>
-									{/if}
-								</strong>
-								<span class="meta"
-									>by {work.author} · {work.chapter_count} chapter{work.chapter_count === 1
-										? ''
-										: 's'}</span
-								>
-							</div>
-						</a>
-					</li>
+					<li><WorkRow {work} showAuthor /></li>
 				{/each}
 			</ul>
 			<Pagination page={data.filteredPage.page} totalPages={data.filteredPage.total_pages} />
@@ -627,26 +603,6 @@
 		color: var(--reader-heart);
 	}
 
-	/* Middle-column cover slot — unchanged 140×200 placeholder. */
-	.cover-slot {
-		flex: 0 0 140px;
-		width: 140px;
-		height: 200px;
-		background: var(--reader-cover-placeholder);
-		border-radius: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.cover-glyph {
-		font-family: Georgia, serif;
-		font-size: 56px;
-		line-height: 1;
-		color: var(--reader-muted);
-		opacity: 0.55;
-		user-select: none;
-	}
-
 	/* Middle-column library list — unchanged from M1 Step 9. */
 	.empty {
 		color: var(--reader-muted);
@@ -660,34 +616,8 @@
 		padding: 0.85rem 0;
 		border-bottom: 1px solid var(--reader-border);
 	}
-	.library-row {
-		display: flex;
-		align-items: center;
-		gap: 14px;
-		color: inherit;
-		text-decoration: none;
-	}
-	.library-row-text {
-		flex: 1 1 auto;
-		min-width: 0;
-	}
-	.library-row:hover strong {
-		text-decoration: underline;
-	}
-	.meta {
-		display: block;
-		color: var(--reader-muted);
-		font-size: 0.9rem;
-		margin-top: 0.15rem;
-	}
-	/* Favorited indicator in the middle-column library list. lucide-svelte
-	   forwards `class` onto the SVG root, so this rule styles the icon
-	   directly. Vertical alignment nudges it onto the title baseline. */
-	:global(.fav-indicator) {
-		color: var(--reader-heart);
-		margin-left: 0.4rem;
-		vertical-align: -2px;
-	}
+	/* Row markup + its cover-slot/meta/fav-indicator styling now live in
+	   the shared <WorkRow> component (reused by the author-detail page). */
 
 	/* Right column hosts the FilterSidebar component (Step 5). Top
 	   padding clears the fixed hamburger button at top:16, right:16

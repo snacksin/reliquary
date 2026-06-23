@@ -1,0 +1,80 @@
+<script lang="ts">
+	import { Heart } from 'lucide-svelte';
+	import type { Work } from '$lib/api';
+
+	/**
+	 * One work row in a library-style list (library middle column +
+	 * author-detail middle column). Extracted so both share one markup
+	 * source. `showAuthor` keeps the "by {author}" prefix on the meta
+	 * line (library); the author-detail page omits it (redundant there).
+	 */
+	let { work, showAuthor = false }: { work: Work; showAuthor?: boolean } = $props();
+
+	const glyph = $derived(work.title?.[0]?.toUpperCase() ?? '?');
+	const chapterLabel = $derived(
+		`${work.chapter_count} chapter${work.chapter_count === 1 ? '' : 's'}`
+	);
+</script>
+
+<a href="/works/{work.id}" class="library-row">
+	<div class="cover-slot" aria-hidden="true">
+		<span class="cover-glyph">{glyph}</span>
+	</div>
+	<div class="library-row-text">
+		<strong>
+			{work.title}
+			{#if work.is_favorite}
+				<Heart class="fav-indicator" size={14} fill="currentColor" aria-label="Favorited" />
+			{/if}
+		</strong>
+		<span class="meta">{showAuthor ? `by ${work.author} · ` : ''}{chapterLabel}</span>
+	</div>
+</a>
+
+<style>
+	.library-row {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		color: inherit;
+		text-decoration: none;
+	}
+	.library-row-text {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.library-row:hover strong {
+		text-decoration: underline;
+	}
+	.meta {
+		display: block;
+		color: var(--reader-muted);
+		font-size: 0.9rem;
+		margin-top: 0.15rem;
+	}
+	.cover-slot {
+		flex: 0 0 140px;
+		width: 140px;
+		height: 200px;
+		background: var(--reader-cover-placeholder);
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cover-glyph {
+		font-family: Georgia, serif;
+		font-size: 56px;
+		line-height: 1;
+		color: var(--reader-muted);
+		opacity: 0.55;
+		user-select: none;
+	}
+	/* lucide-svelte forwards `class` onto the SVG root, so this styles the
+	   favorited indicator directly. */
+	:global(.fav-indicator) {
+		color: var(--reader-heart);
+		margin-left: 0.4rem;
+		vertical-align: -2px;
+	}
+</style>

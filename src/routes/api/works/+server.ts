@@ -254,6 +254,15 @@ export const GET: RequestHandler = ({ url }) => {
 	// AND-composes here). No param needed.
 	whereParts.push('w.trashed_at IS NULL');
 
+	// Author Pages Part 1: optional author scope (exact works.author
+	// match). Additive — ANDs with the trashed/tag/search clauses, so the
+	// author-detail middle column reuses this endpoint unchanged.
+	const author = url.searchParams.get('author');
+	if (author) {
+		whereParts.push('w.author = ?');
+		whereParams.push(author);
+	}
+
 	if (tagIds.length > 0) {
 		whereParts.push(TAG_FILTER_CLAUSE);
 		whereParams.push(JSON.stringify(tagIds), JSON.stringify(matchAll));
