@@ -1,9 +1,40 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page as pageState } from '$app/state';
 	import { favoriteAuthor, unfavoriteAuthor, type Author } from '$lib/api';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// ─── Author-tag filter (Part 2) ─────────────────────────────────
+	//
+	// Only tags actually carried by ≥1 author are offered as chips. The URL
+	// (`?author_tags=`) is the source of truth; toggling a chip rewrites it
+	// via goto (mirrors FilterSidebar.pushFilterState — keepFocus, noScroll).
+	// The server returns the intersection-filtered list, so `data.authors` is
+	// already narrowed when chips are active.
+	const filterTags = $derived(data.tagVocab.filter((t) => t.author_count > 0));
+	const selectedTagIds = $derived(new Set(data.selectedTagIds));
+
+	function pushFilter(nextIds: number[]) {
+		const params = new URLSearchParams(pageState.url.searchParams);
+		if (nextIds.length > 0) params.set('author_tags', nextIds.join(','));
+		else params.delete('author_tags');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
+	function toggleFilter(id: number) {
+		const next = selectedTagIds.has(id)
+			? data.selectedTagIds.filter((x) => x !== id)
+			: [...data.selectedTagIds, id];
+		pushFilter(next);
+	}
+
+	function clearFilter() {
+		pushFilter([]);
+	}
 
 	// Optimistic favorite overrides keyed by author name. The heart toggle
 	// updates this map locally instead of calling invalidateAll() — a full
@@ -75,12 +106,38 @@
 		<h1>Authors <span class="total">· {authors.length}</span></h1>
 	</header>
 
+	{#if filterTags.length > 0}
+		<div class="filter-bar">
+			<span class="filter-label">Filter by tag</span>
+			{#each filterTags as tag (tag.id)}
+				<button
+					type="button"
+					class="filter-chip"
+					class:selected={selectedTagIds.has(tag.id)}
+					aria-pressed={selectedTagIds.has(tag.id)}
+					onclick={() => toggleFilter(tag.id)}
+				>
+					{tag.name} <span class="chip-count">{tag.author_count}</span>
+				</button>
+			{/each}
+			{#if selectedTagIds.size > 0}
+				<button type="button" class="filter-clear" onclick={clearFilter}>
+					Clear ({selectedTagIds.size})
+				</button>
+			{/if}
+		</div>
+	{/if}
+
 	{#if actionError}
 		<p class="page-error" role="alert">{actionError}</p>
 	{/if}
 
 	{#if authors.length === 0}
-		<p class="empty-state">No authors yet — your library is empty.</p>
+		{#if selectedTagIds.size > 0}
+			<p class="empty-state">No authors match the selected tag{selectedTagIds.size === 1 ? '' : 's'}.</p>
+		{:else}
+			<p class="empty-state">No authors yet — your library is empty.</p>
+		{/if}
 	{:else}
 		{#if favorites.length > 0}
 			<section class="author-group">
@@ -135,6 +192,62 @@
 	.empty-state {
 		color: var(--reader-muted);
 		padding: 2rem 0;
+	}
+
+	/* ─── Author-tag filter bar (Part 2) ─── */
+	.filter-bar {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 10px 12px;
+		margin-bottom: 1.25rem;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+	}
+	.filter-label {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+	}
+	.filter-chip {
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 3px 11px;
+		border-radius: 999px;
+		border: 1px solid var(--reader-border);
+		background: transparent;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.filter-chip:hover {
+		border-color: var(--reader-accent);
+		color: var(--reader-fg);
+	}
+	.filter-chip.selected {
+		background: var(--reader-fg);
+		border-color: var(--reader-fg);
+		color: var(--reader-bg);
+	}
+	.filter-chip .chip-count {
+		opacity: 0.7;
+		margin-left: 2px;
+	}
+	.filter-clear {
+		font: inherit;
+		font-size: 0.75rem;
+		margin-left: 2px;
+		padding: 2px 8px;
+		border-radius: 999px;
+		border: 1px solid var(--reader-border);
+		background: transparent;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.filter-clear:hover {
+		color: var(--reader-heart);
+		border-color: var(--reader-heart);
 	}
 	.author-group {
 		margin-bottom: 1.75rem;

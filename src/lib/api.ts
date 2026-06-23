@@ -379,8 +379,18 @@ export type Author = {
 	favorited_at: string | null;
 };
 
-export async function getAuthors(fetch: Fetch): Promise<Author[]> {
-	const res = await fetch('/api/authors');
+export async function getAuthors(
+	fetch: Fetch,
+	opts?: { authorTags?: number[] }
+): Promise<Author[]> {
+	// Author Pages Part 2: optional author-tag filter (intersection). Omitted
+	// by default so Part 1 callers are unaffected.
+	const params = new URLSearchParams();
+	if (opts?.authorTags && opts.authorTags.length > 0) {
+		params.set('author_tags', opts.authorTags.join(','));
+	}
+	const qs = params.toString();
+	const res = await fetch(qs ? `/api/authors?${qs}` : '/api/authors');
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
 }
@@ -399,6 +409,67 @@ export async function unfavoriteAuthor(name: string, fetch: Fetch): Promise<void
 		method: 'DELETE'
 	});
 	if (!res.ok) throw new Error(await extractError(res));
+}
+
+// ─── Author Pages (Part 2): notes + tags ────────────────────────────
+
+/** A tag attached to an author (a row from the reusable vocabulary). */
+export type AuthorTag = { id: number; name: string };
+
+/** A vocabulary entry plus how many authors carry it (for filter chips). */
+export type AuthorTagVocabItem = { id: number; name: string; author_count: number };
+
+/** The saved free-text note for one author (null = none). */
+export async function getAuthorNote(name: string, fetch: Fetch): Promise<string | null> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	const body = (await res.json()) as { notes: string | null };
+	return body.notes;
+}
+
+/** Save (or clear, with an empty string) the author's note. */
+export async function saveAuthorNote(name: string, notes: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ notes })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** This author's attached tags. */
+export async function getAuthorTags(name: string, fetch: Fetch): Promise<AuthorTag[]> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/tags`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Attach a tag by name (find-or-creates in the vocabulary). Returns it. */
+export async function addAuthorTag(name: string, tag: string, fetch: Fetch): Promise<AuthorTag> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/tags`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ name: tag })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Detach a tag from this author (leaves it in the vocabulary). */
+export async function removeAuthorTag(name: string, tagId: number, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/tags`, {
+		method: 'DELETE',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ id: tagId })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** The full reusable author-tag vocabulary (autocomplete + filter options). */
+export async function getAuthorTagVocab(fetch: Fetch): Promise<AuthorTagVocabItem[]> {
+	const res = await fetch('/api/author-tags');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
 }
 
 /**
