@@ -4,12 +4,14 @@ import { join } from 'node:path';
 import { getDb } from './db';
 import {
 	extractCanonicalAo3Url,
+	extractSeriesEntries,
 	parseEpub,
 	type ParsedChapter,
 	type ParsedEpub,
 	type ParsedImage
 } from './epub';
 import { computeContentHash, countWords, hashChapterContent } from './identity';
+import { syncWorkSeries } from './series';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -209,6 +211,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	const prefaceChapter = parsed.chapters.find((c) => c.kind === 'preface');
 	const sourceUrl = extractCanonicalAo3Url(prefaceChapter?.html ?? '');
 	const contentHash = computeContentHash(parseId, parsed.title, parsed.author, parsed.chapters);
+	// Series Pages Part 1: memberships parsed from the preface "Series:" line.
+	// Written to series/series_works inside whichever write transaction fires.
+	const seriesEntries = extractSeriesEntries(prefaceChapter?.html ?? '');
 
 	const db = getDb();
 	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount);
@@ -409,6 +414,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 					const row = upsertTag.get(tag.category, tag.name);
 					if (row) linkWorkTag.run(finalId, row.id);
 				}
+
+				// Series Pages Part 1: refresh this work's series links (and
+				// stamp series_scanned_at) from the re-parsed preface.
+				syncWorkSeries(db, finalId, seriesEntries);
 			})();
 		} catch (e) {
 			console.error(`[ingest] DB update failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
@@ -494,6 +503,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				const row = upsertTag.get(tag.category, tag.name);
 				if (row) linkWorkTag.run(work_id, row.id);
 			}
+
+			// Series Pages Part 1: write this work's series links (and stamp
+			// series_scanned_at) so the backfill skips this fresh work.
+			syncWorkSeries(db, work_id, seriesEntries);
 		})();
 	} catch (e) {
 		console.error(`[ingest] DB write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);

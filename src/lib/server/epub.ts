@@ -264,6 +264,81 @@ export function extractCanonicalAo3Url(prefaceHtml: string): string | null {
 	return `https://archiveofourown.org/works/${m[1]}`;
 }
 
+/** One series membership parsed from a preface "Series:" entry. */
+export type ParsedSeries = {
+	name: string;
+	/** Normalized AO3 series URL, or null for a non-AO3 (name-keyed) series. */
+	url: string | null;
+	/** "Part N" position, or null when the entry carries no part number. */
+	position: number | null;
+};
+
+/**
+ * Rebuild the canonical AO3 series URL from a series href, by id, the same way
+ * `extractCanonicalAo3Url` does for works — so http/https, trailing slashes,
+ * and query strings all normalize to one stable key. Returns null for hrefs
+ * that aren't AO3 series links (those fall back to name identity).
+ */
+function normalizeSeriesUrl(href: string): string | null {
+	const m = href.match(/archiveofourown\.org\/series\/(\d+)/i);
+	return m ? `https://archiveofourown.org/series/${m[1]}` : null;
+}
+
+/**
+ * Extract series memberships from a preface's HTML (Series Pages Part 1). AO3
+ * EPUB prefaces carry a `<dt>Series:</dt><dd>…</dd>` pair inside the same
+ * `<dl class="tags|meta">` block that holds the tags, formatted as
+ * `Part N of <a href="…/series/<id>">Name</a>`, comma-separated for a work in
+ * multiple series. `extractPrefaceTags` skips this heading; we read it here.
+ *
+ * Same resilience choices as the tag extractor: anchored on the `<dl>` shell
+ * (so it can't catch a stray `<dt>` elsewhere), regex rather than a full HTML
+ * parser, `decodeEntities` on the captured name. Deduped by url (or lowercased
+ * name when URL-less). Returns [] when there's no Series line.
+ */
+export function extractSeriesEntries(html: string): ParsedSeries[] {
+	if (!html) return [];
+
+	const dlMatch = html.match(
+		/<dl\b[^>]*class\s*=\s*(["'])[^"']*\b(?:tags|meta)\b[^"']*\1[^>]*>([\s\S]*?)<\/dl>/i
+	);
+	if (!dlMatch) return [];
+	const dlInner = dlMatch[2];
+
+	// Find the Series <dd>.
+	const pairRe = /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi;
+	let ddInner: string | null = null;
+	let m: RegExpExecArray | null;
+	while ((m = pairRe.exec(dlInner)) !== null) {
+		const heading = decodeEntities(m[1].replace(/<[^>]+>/g, ''))
+			.replace(/[:\s]+$/u, '')
+			.trim()
+			.toLowerCase();
+		if (heading === 'series') {
+			ddInner = m[2];
+			break;
+		}
+	}
+	if (ddInner === null) return [];
+
+	// Each membership: "Part <N> of <a href="…">Name</a>".
+	const entryRe = /Part\s+(\d+)\s+of\s*<a\b[^>]*\bhref=(["'])([^"']+)\2[^>]*>([\s\S]*?)<\/a>/gi;
+	const out: ParsedSeries[] = [];
+	const seen = new Set<string>();
+	let e: RegExpExecArray | null;
+	while ((e = entryRe.exec(ddInner)) !== null) {
+		const position = Number.parseInt(e[1], 10);
+		const url = normalizeSeriesUrl(e[3]);
+		const name = decodeEntities(e[4].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+		if (!name) continue;
+		const key = url ?? `name::${name.toLowerCase()}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ name, url, position: Number.isFinite(position) ? position : null });
+	}
+	return out;
+}
+
 /**
  * Rewrite the sentinel image-src prefix epub2 emitted in chapter HTML
  * to point at this server's images endpoint for the given work.

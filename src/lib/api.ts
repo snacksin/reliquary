@@ -472,6 +472,33 @@ export async function getAuthorTagVocab(fetch: Fetch): Promise<AuthorTagVocabIte
 	return res.json();
 }
 
+// ─── Series Pages (Part 1) ──────────────────────────────────────────
+
+/** A series detail: its name + the parts you own, in reading order. */
+export type Series = {
+	id: number;
+	name: string;
+	ao3_series_url: string | null;
+	works: Work[];
+};
+
+/** One series a work belongs to, for the preface "Part N of …" section. */
+export type WorkSeriesLink = { id: number; name: string; position: number | null };
+
+/** A series + its owned parts (the /series/[id] page). */
+export async function getSeries(id: number | string, fetch: Fetch): Promise<Series> {
+	const res = await fetch(`/api/series/${encodeURIComponent(String(id))}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** The series a given work belongs to (preface cross-link section). */
+export async function getWorkSeries(workId: string, fetch: Fetch): Promise<WorkSeriesLink[]> {
+	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
 /**
  * Per-edge alias info, returned by `GET /api/tags/<parent_id>/aliases`
  * alongside the parent metadata.

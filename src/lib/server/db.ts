@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
+import { backfillSeries } from './series';
 
 let cached: Database.Database | undefined;
 
@@ -60,6 +61,15 @@ export function getDb(): Database.Database {
 		backfillIdentity(db);
 	} catch (e) {
 		console.error('[backfill] failed', e);
+	}
+
+	// Series Pages Part 1: one-shot series backfill from stored prefaces.
+	// Same guarded-once-per-boot shape as the identity backfill above —
+	// a failure here can never stop the DB from booting.
+	try {
+		backfillSeries(db);
+	} catch (e) {
+		console.error('[series-backfill] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more
