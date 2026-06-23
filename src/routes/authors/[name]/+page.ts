@@ -1,6 +1,14 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { listWorks, getTags, getAuthors, type TagCategory } from '$lib/api';
+import {
+	listWorks,
+	getTags,
+	getAuthors,
+	getAuthorNote,
+	getAuthorTags,
+	getAuthorTagVocab,
+	type TagCategory
+} from '$lib/api';
 
 // Param parsing mirrors src/routes/+page.ts (the library load). Values
 // are re-validated server-side, so this is belt-and-suspenders; kept
@@ -66,10 +74,13 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 	const perPage = parsePerPage(url.searchParams.get('per_page'));
 	const q = url.searchParams.get('q') ?? '';
 
-	const [authors, filteredPage, tagGroups] = await Promise.all([
+	const [authors, filteredPage, tagGroups, notes, authorTags, tagVocab] = await Promise.all([
 		getAuthors(fetch),
 		listWorks(fetch, { author, tags: selectedTagIds, matchAll: matchAllCategories, q, page, perPage }),
-		getTags(fetch, { author })
+		getTags(fetch, { author }),
+		getAuthorNote(author, fetch),
+		getAuthorTags(author, fetch),
+		getAuthorTagVocab(fetch)
 	]);
 
 	const authorRecord = authors.find((a) => a.name === author);
@@ -83,6 +94,10 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 		matchAllCategories,
 		q,
 		page: filteredPage.page,
-		perPage: filteredPage.per_page
+		perPage: filteredPage.per_page,
+		// Author Pages Part 2: left-column notes + tags.
+		notes,
+		authorTags,
+		tagVocab
 	};
 };

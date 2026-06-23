@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page as pageState } from '$app/state';
 	import { favoriteAuthor, unfavoriteAuthor } from '$lib/api';
+	import AuthorNotesTags from '$lib/AuthorNotesTags.svelte';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
 	import SearchInput from '$lib/SearchInput.svelte';
@@ -77,12 +78,19 @@
 	{/if}
 
 	<div class="cols">
-		<!-- Left: swappable Part 2 slot. Keep this block isolated. -->
+		<!-- Left: Part 2 notes + tags (was the "coming soon" stub). The {#key}
+		     remounts the component per author so its prop-seeded local state
+		     (note draft, tag chips) resets cleanly when SvelteKit reuses this
+		     route for a different [name]. -->
 		<aside class="left-col" aria-label="Author notes and tags">
-			<div class="stub">
-				<div class="stub-title">Notes &amp; tags</div>
-				<p class="stub-body">Coming soon.</p>
-			</div>
+			{#key author.name}
+				<AuthorNotesTags
+					name={author.name}
+					notes={data.notes}
+					tags={data.authorTags}
+					vocab={data.tagVocab}
+				/>
+			{/key}
 		</aside>
 
 		<section class="middle-col" aria-label="Works by this author">
@@ -226,22 +234,6 @@
 	.right-col {
 		grid-area: right;
 		min-width: 0;
-	}
-	.stub {
-		border: 1px dashed var(--reader-border);
-		border-radius: 6px;
-		padding: 0.85rem;
-		color: var(--reader-muted);
-	}
-	.stub-title {
-		font-weight: 500;
-		color: var(--reader-fg);
-		margin-bottom: 0.25rem;
-		font-size: 0.9rem;
-	}
-	.stub-body {
-		margin: 0;
-		font-size: 0.82rem;
 	}
 	.middle-header {
 		display: flex;
