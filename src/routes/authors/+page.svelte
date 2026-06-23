@@ -1,28 +1,46 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { favoriteAuthor, unfavoriteAuthor, type Author } from '$lib/api';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	const authors = $derived(data.authors);
+	// Optimistic favorite overrides keyed by author name. The heart toggle
+	// updates this map locally instead of calling invalidateAll() — a full
+	// reload re-fetched /api/authors and flashed a page-load spinner. The
+	// override is applied over the server data and only reverted if the
+	// persist call fails. (Part 1 follow-up: favorite-flash fix.)
+	let overrides = $state<Record<string, boolean>>({});
+
+	const authors = $derived(
+		data.authors.map((a) => (a.name in overrides ? { ...a, is_favorite: overrides[a.name] } : a))
+	);
 	const favorites = $derived(authors.filter((a) => a.is_favorite));
 
 	let actionError = $state<string | null>(null);
-	let busy = $state<string | null>(null);
+	// Per-author in-flight guard — prevents overlapping persist calls on the
+	// same author without dimming the card (no visual flash).
+	let inFlight = $state<string | null>(null);
 
-	async function toggleFavorite(author: Author) {
+	async function toggleFavorite(e: MouseEvent, author: Author) {
+		// Heart lives next to the card's nav link; keep its click self-
+		// contained so it never triggers card navigation.
+		e.preventDefault();
+		e.stopPropagation();
+		if (inFlight === author.name) return;
+
 		actionError = null;
-		busy = author.name;
+		const next = !author.is_favorite;
+		overrides = { ...overrides, [author.name]: next }; // optimistic
+		inFlight = author.name;
 		try {
-			if (author.is_favorite) await unfavoriteAuthor(author.name, fetch);
-			else await favoriteAuthor(author.name, fetch);
-			await invalidateAll();
-		} catch (e) {
-			actionError = e instanceof Error ? e.message : 'Could not update favorite';
+			if (next) await favoriteAuthor(author.name, fetch);
+			else await unfavoriteAuthor(author.name, fetch);
+		} catch (err) {
+			overrides = { ...overrides, [author.name]: author.is_favorite }; // revert
+			actionError = err instanceof Error ? err.message : 'Could not update favorite';
 		} finally {
-			busy = null;
+			inFlight = null;
 		}
 	}
 
@@ -34,7 +52,7 @@
 <svelte:head><title>Reliquary — Authors</title></svelte:head>
 
 {#snippet authorCard(author: Author)}
-	<div class="author-card" class:busy={busy === author.name}>
+	<div class="author-card">
 		<a class="author-link" href="/authors/{encodeURIComponent(author.name)}">
 			<span class="author-name">{author.name}</span>
 			<span class="author-count">{countLabel(author.work_count)}</span>
@@ -43,8 +61,7 @@
 			type="button"
 			class="heart"
 			class:filled={author.is_favorite}
-			onclick={() => toggleFavorite(author)}
-			disabled={busy === author.name}
+			onclick={(e) => toggleFavorite(e, author)}
 			aria-label={author.is_favorite ? `Unfavorite ${author.name}` : `Favorite ${author.name}`}
 			aria-pressed={author.is_favorite}
 		>
@@ -146,9 +163,6 @@
 		border: 1px solid var(--reader-border);
 		border-radius: 6px;
 	}
-	.author-card.busy {
-		opacity: 0.55;
-	}
 	.author-link {
 		flex: 1 1 auto;
 		min-width: 0;
@@ -186,8 +200,5 @@
 	}
 	.heart.filled {
 		color: var(--reader-heart);
-	}
-	.heart:disabled {
-		cursor: progress;
 	}
 </style>

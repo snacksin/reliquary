@@ -157,7 +157,9 @@
 					<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
 				</button>
 			</div>
-			<p class="author">by {data.work.author}</p>
+			<p class="author">
+				by <a href="/authors/{encodeURIComponent(data.work.author)}">{data.work.author}</a>
+			</p>
 		</div>
 	</div>
 	{#if favoriteError}
@@ -354,6 +356,16 @@
 	.author {
 		color: var(--reader-muted);
 		margin-top: 0;
+	}
+	/* Author name links to that author's page (Part 1 follow-up) — kept in
+	   the foreground color so it reads as the clickable element next to the
+	   muted "by", underlining on hover like the page's other chrome links. */
+	.author a {
+		color: var(--reader-fg);
+		text-decoration: none;
+	}
+	.author a:hover {
+		text-decoration: underline;
 	}
 	.error {
 		color: #b00;
