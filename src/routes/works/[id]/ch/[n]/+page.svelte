@@ -17,6 +17,17 @@
 	const hasPrev = $derived(data.chapterNumber > 1);
 	const hasNext = $derived(data.chapterNumber < data.chapterCount);
 
+	// Series continuity (Part 3). At a part boundary — the last chapter (no
+	// "Next chapter") or ch 1 (no "Previous chapter") — offer the adjacent
+	// owned part instead, one button per series. A single-chapter part is both
+	// first and last, so both can show. Links go to ch 1 of the adjacent part
+	// (plain route → opens at the top). `series_name` is shown only when there
+	// are 2+ buttons in a direction (a work in multiple series).
+	const atLast = $derived(data.chapterNumber >= data.chapterCount);
+	const atFirst = $derived(data.chapterNumber === 1);
+	const nextParts = $derived(atLast ? data.seriesNav.filter((s) => s.next) : []);
+	const prevParts = $derived(atFirst ? data.seriesNav.filter((s) => s.prev) : []);
+
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let suppress = false;
 
@@ -85,20 +96,36 @@
 
 <Reader html={data.html} workId={data.workId} />
 
-{#if hasPrev || hasNext}
+{#if hasPrev || hasNext || prevParts.length > 0 || nextParts.length > 0}
 	<nav class="chapter-nav" aria-label="Chapter navigation">
-		{#if hasPrev}
-			<a class="chapter-nav-link prev" href="/works/{data.workId}/ch/{data.chapterNumber - 1}">
-				← Previous chapter
-			</a>
-		{:else}
-			<span></span>
-		{/if}
-		{#if hasNext}
-			<a class="chapter-nav-link next" href="/works/{data.workId}/ch/{data.chapterNumber + 1}">
-				Next chapter →
-			</a>
-		{/if}
+		<div class="nav-slot prev">
+			{#if hasPrev}
+				<a class="chapter-nav-link prev" href="/works/{data.workId}/ch/{data.chapterNumber - 1}">
+					← Previous chapter
+				</a>
+			{:else}
+				{#each prevParts as s (s.series_id)}
+					<a class="part-link prev" href="/works/{s.prev!.id}/ch/1">
+						{#if prevParts.length > 1}<span class="part-series">{s.series_name}</span>{/if}
+						<span>← Previous part: {s.prev!.title}</span>
+					</a>
+				{/each}
+			{/if}
+		</div>
+		<div class="nav-slot next">
+			{#if hasNext}
+				<a class="chapter-nav-link next" href="/works/{data.workId}/ch/{data.chapterNumber + 1}">
+					Next chapter →
+				</a>
+			{:else}
+				{#each nextParts as s (s.series_id)}
+					<a class="part-link next" href="/works/{s.next!.id}/ch/1">
+						{#if nextParts.length > 1}<span class="part-series">{s.series_name}</span>{/if}
+						<span>Next part: {s.next!.title} →</span>
+					</a>
+				{/each}
+			{/if}
+		</div>
 	</nav>
 {/if}
 
@@ -116,8 +143,21 @@
 		border-top: 1px solid var(--reader-border);
 		display: flex;
 		justify-content: space-between;
+		align-items: flex-start;
 		gap: 1rem;
 		font-family: var(--reader-font-family);
+	}
+	/* Each side holds either a chapter link or stacked series-part buttons.
+	   The next slot right-aligns its contents so it stays in the corner. */
+	.nav-slot {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.nav-slot.next {
+		align-items: flex-end;
+		text-align: right;
 	}
 	.chapter-nav-link {
 		color: var(--reader-link);
@@ -128,8 +168,30 @@
 	.chapter-nav-link:hover {
 		text-decoration: underline;
 	}
-	.chapter-nav-link.next {
-		margin-left: auto;
-		text-align: right;
+	/* Series-part jump — the primary action at a part boundary, so it reads
+	   as a button (bordered chip) rather than a plain chapter link. */
+	.part-link {
+		display: inline-flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		max-width: 100%;
+		padding: 0.5rem 0.85rem;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		color: var(--reader-fg);
+		text-decoration: none;
+		font-size: 0.95rem;
+		font-weight: 500;
+	}
+	.part-link:hover {
+		border-color: var(--reader-accent);
+	}
+	.part-link.next {
+		align-items: flex-end;
+	}
+	.part-series {
+		font-size: 0.78rem;
+		font-weight: 400;
+		color: var(--reader-muted);
 	}
 </style>
