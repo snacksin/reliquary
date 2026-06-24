@@ -2,13 +2,13 @@
 	import { page } from '$app/state';
 
 	/**
-	 * Browse-pages top nav (Author Pages Part 1). Rendered only on the
-	 * library + author pages (see +layout.svelte), never on fic detail or
-	 * the reader. "Series" is stubbed/hidden until that feature exists.
+	 * Browse-pages top nav. Rendered only on the library + author + series
+	 * pages (see +layout.svelte), never on fic detail or the reader.
 	 */
 	const routeId = $derived(page.route.id ?? '');
 	const onLibrary = $derived(routeId === '/');
 	const onAuthors = $derived(routeId === '/authors' || routeId.startsWith('/authors/'));
+	const onSeries = $derived(routeId === '/series' || routeId.startsWith('/series/'));
 </script>
 
 <nav class="top-nav" aria-label="Browse">
@@ -16,6 +16,7 @@
 	<a href="/authors" class:active={onAuthors} aria-current={onAuthors ? 'page' : undefined}>
 		Authors
 	</a>
+	<a href="/series" class:active={onSeries} aria-current={onSeries ? 'page' : undefined}>Series</a>
 </nav>
 
 <style>

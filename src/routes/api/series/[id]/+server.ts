@@ -2,6 +2,10 @@ import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 
+function seriesExists(db: ReturnType<typeof getDb>, id: number): boolean {
+	return db.prepare('SELECT 1 FROM series WHERE id = ?').get(id) !== undefined;
+}
+
 /**
  * `GET /api/series/[id]` — a series plus the parts you own, in reading order
  * (Series Pages Part 1). Trashed works are excluded from the parts list. The
@@ -27,8 +31,10 @@ export const GET: RequestHandler = ({ params }) => {
 	if (!Number.isInteger(id)) throw error(404, 'series not found');
 
 	const series = db
-		.prepare('SELECT id, name, ao3_series_url FROM series WHERE id = ?')
-		.get(id) as { id: number; name: string; ao3_series_url: string | null } | undefined;
+		.prepare('SELECT id, name, ao3_series_url, favorited_at FROM series WHERE id = ?')
+		.get(id) as
+		| { id: number; name: string; ao3_series_url: string | null; favorited_at: string | null }
+		| undefined;
 	if (!series) throw error(404, 'series not found');
 
 	const rows = db
@@ -59,5 +65,35 @@ export const GET: RequestHandler = ({ params }) => {
 				: null
 	}));
 
-	return json({ id: series.id, name: series.name, ao3_series_url: series.ao3_series_url, works });
+	return json({
+		id: series.id,
+		name: series.name,
+		ao3_series_url: series.ao3_series_url,
+		is_favorite: series.favorited_at !== null,
+		favorited_at: series.favorited_at,
+		works
+	});
+};
+
+/**
+ * `PATCH /api/series/[id]` — set the index hide flag (Series Pages Part 2).
+ * Body: { hidden_from_index: boolean }. 204. Index-only: this never affects
+ * whether the series' member works show in the library.
+ */
+export const PATCH: RequestHandler = async ({ params, request }) => {
+	const db = getDb();
+	const id = Number.parseInt(params.id, 10);
+	if (!Number.isInteger(id) || !seriesExists(db, id)) throw error(404, 'series not found');
+
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'invalid JSON body');
+	}
+	const hidden = (body as { hidden_from_index?: unknown })?.hidden_from_index;
+	if (typeof hidden !== 'boolean') throw error(400, 'hidden_from_index must be a boolean');
+
+	db.prepare('UPDATE series SET hidden_from_index = ? WHERE id = ?').run(hidden ? 1 : 0, id);
+	return new Response(null, { status: 204 });
 };
