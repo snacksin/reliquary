@@ -10,6 +10,15 @@
 	const series = $derived(data.series);
 	const count = $derived(series.works.length);
 
+	// "Read next" (Part 3): the first part you haven't finished, in position
+	// order (the list is already position-sorted). A part counts as finished
+	// once reading_progress reached its last chapter. Null when every part is
+	// finished (or none has progress beyond completion).
+	function isFinished(w: (typeof series.works)[number]): boolean {
+		return w.last_read != null && w.last_read.chapter >= w.chapter_count;
+	}
+	const readNextId = $derived(series.works.find((w) => !isFinished(w))?.id ?? null);
+
 	// History-aware back (Part 2 fix C): return to the fic you came from, not
 	// Library. afterNavigate captures the previous page on every entry; if it
 	// was a /works/ page, back goes there, otherwise /series (also the cold-
@@ -75,7 +84,12 @@
 	{:else}
 		<ul class="works">
 			{#each series.works as work (work.id)}
-				<li><WorkRow {work} showAuthor /></li>
+				<li class:read-next={work.id === readNextId}>
+					{#if work.id === readNextId}
+						<span class="read-next-badge"><span aria-hidden="true">▶</span> Read next</span>
+					{/if}
+					<WorkRow {work} showAuthor />
+				</li>
 			{/each}
 		</ul>
 	{/if}
@@ -156,5 +170,29 @@
 	ul.works li {
 		padding: 0.5rem 0;
 		border-bottom: 1px solid var(--reader-border);
+	}
+	/* "Read next" highlight (Part 3) — a quiet card around the first
+	   unfinished part, with a small badge above the row. */
+	ul.works li.read-next {
+		border-bottom-color: transparent;
+		background: var(--reader-card-bg);
+		border-radius: 6px;
+		padding: 0.5rem 0.75rem;
+		margin: 0.25rem 0;
+	}
+	.read-next-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		margin-bottom: 0.4rem;
+		padding: 2px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--reader-accent);
+		background: var(--reader-bg);
+		color: var(--reader-accent);
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
 	}
 </style>

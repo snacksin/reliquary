@@ -51,12 +51,12 @@
 	);
 
 	let showHidden = $state(false);
-	const hiddenCount = $derived(series.filter((s) => s.hidden_from_index).length);
-	// Visible list respects the hide flag unless "show hidden" is on.
-	const visible = $derived(
-		series.filter((s) => showHidden || !s.hidden_from_index).toSorted(comparator)
-	);
-	const favorites = $derived(visible.filter((s) => s.is_favorite));
+	// Hidden series render in their own group below the show/hide button (the
+	// button is the divider) — never interleaved into the main grid.
+	const nonHidden = $derived(series.filter((s) => !s.hidden_from_index).toSorted(comparator));
+	const hiddenList = $derived(series.filter((s) => s.hidden_from_index).toSorted(comparator));
+	const hiddenCount = $derived(hiddenList.length);
+	const favorites = $derived(nonHidden.filter((s) => s.is_favorite));
 
 	let actionError = $state<string | null>(null);
 	let favInFlight = $state<number | null>(null);
@@ -173,14 +173,16 @@
 			</section>
 		{/if}
 
-		<section class="series-group">
-			<h2>All series</h2>
-			<div class="series-grid">
-				{#each visible as s (s.id)}
-					{@render seriesCard(s)}
-				{/each}
-			</div>
-		</section>
+		{#if nonHidden.length > 0}
+			<section class="series-group">
+				<h2>All series</h2>
+				<div class="series-grid">
+					{#each nonHidden as s (s.id)}
+						{@render seriesCard(s)}
+					{/each}
+				</div>
+			</section>
+		{/if}
 
 		{#if hiddenCount > 0}
 			<button type="button" class="show-hidden" onclick={() => (showHidden = !showHidden)}>
@@ -190,6 +192,16 @@
 					<EyeOff size={15} aria-hidden="true" /> Show hidden ({hiddenCount})
 				{/if}
 			</button>
+			{#if showHidden}
+				<section class="series-group hidden-group">
+					<h2>Hidden</h2>
+					<div class="series-grid">
+						{#each hiddenList as s (s.id)}
+							{@render seriesCard(s)}
+						{/each}
+					</div>
+				</section>
+			{/if}
 		{/if}
 	{/if}
 </main>
@@ -339,5 +351,8 @@
 	.show-hidden:hover {
 		color: var(--reader-fg);
 		text-decoration: underline;
+	}
+	.hidden-group {
+		margin-top: 0.75rem;
 	}
 </style>

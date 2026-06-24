@@ -512,6 +512,22 @@ export async function getWorkSeries(workId: string, fetch: Fetch): Promise<WorkS
 	return res.json();
 }
 
+/** A work's adjacent owned parts in each of its series (reader continuity). */
+export type SeriesNav = {
+	series_id: number;
+	series_name: string;
+	position: number;
+	prev: { id: string; title: string } | null;
+	next: { id: string; title: string } | null;
+};
+
+/** Adjacent (position ± 1) owned parts for the reader's next/prev-part buttons. */
+export async function getSeriesNav(workId: string, fetch: Fetch): Promise<SeriesNav[]> {
+	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series-nav`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
 /** Every series you own a part of (the /series index, Part 2). */
 export async function getSeriesList(fetch: Fetch): Promise<SeriesSummary[]> {
 	const res = await fetch('/api/series');
