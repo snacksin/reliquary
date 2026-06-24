@@ -8,11 +8,13 @@
 
 	let { children } = $props();
 
-	// Browse-pages top nav (Author Pages Part 1): only the library and
-	// author pages get the Library | Authors header — never fic detail,
-	// the reader, or the /tags & /trash management pages.
+	// Browse-pages top nav (Author/Series Pages): only the library, author,
+	// and series pages get the Library | Authors | Series header — never fic
+	// detail, the reader, or the /tags & /trash management pages.
 	const showTopNav = $derived(
-		page.route.id === '/' || (page.route.id ?? '').startsWith('/authors')
+		page.route.id === '/' ||
+			(page.route.id ?? '').startsWith('/authors') ||
+			(page.route.id ?? '').startsWith('/series')
 	);
 
 	// Mirror the themeStore reactively onto <html data-theme="..." />.

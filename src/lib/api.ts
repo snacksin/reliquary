@@ -479,7 +479,20 @@ export type Series = {
 	id: number;
 	name: string;
 	ao3_series_url: string | null;
+	is_favorite: boolean;
+	favorited_at: string | null;
 	works: Work[];
+};
+
+/** One series in the /series index (Part 2). */
+export type SeriesSummary = {
+	id: number;
+	name: string;
+	ao3_series_url: string | null;
+	part_count: number;
+	is_favorite: boolean;
+	favorited_at: string | null;
+	hidden_from_index: boolean;
 };
 
 /** One series a work belongs to, for the preface "Part N of …" section. */
@@ -492,11 +505,39 @@ export async function getSeries(id: number | string, fetch: Fetch): Promise<Seri
 	return res.json();
 }
 
-/** The series a given work belongs to (preface cross-link section). */
+/** The series a given work belongs to (preface cross-link + fic-detail section). */
 export async function getWorkSeries(workId: string, fetch: Fetch): Promise<WorkSeriesLink[]> {
 	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series`);
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+/** Every series you own a part of (the /series index, Part 2). */
+export async function getSeriesList(fetch: Fetch): Promise<SeriesSummary[]> {
+	const res = await fetch('/api/series');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Manual favorite-series toggle — mirrors favoriteAuthor. */
+export async function favoriteSeries(id: number, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/series/${id}/favorite`, { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function unfavoriteSeries(id: number, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/series/${id}/favorite`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Hide/show a series on the /series index (Part 2). Index-only declutter. */
+export async function setSeriesHidden(id: number, hidden: boolean, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/series/${id}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ hidden_from_index: hidden })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 /**

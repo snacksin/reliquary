@@ -160,6 +160,17 @@
 			<p class="author">
 				by <a href="/authors/{encodeURIComponent(data.work.author)}">{data.work.author}</a>
 			</p>
+			{#if data.series.length > 0}
+				<nav class="series-of" aria-label="Series">
+					{#each data.series as s (s.id)}
+						<p class="series-line">
+							{#if s.position != null}Part {s.position} of{/if}{' '}<a
+								href="/series/{s.id}">{s.name}</a
+							>
+						</p>
+					{/each}
+				</nav>
+			{/if}
 		</div>
 	</div>
 	{#if favoriteError}
@@ -365,6 +376,23 @@
 		text-decoration: none;
 	}
 	.author a:hover {
+		text-decoration: underline;
+	}
+	/* Series cross-link (Part 2 A) — surfaced on the detail page itself,
+	   not just the buried metadata page. One line per series. */
+	.series-of {
+		margin-top: 0.4rem;
+	}
+	.series-line {
+		margin: 0.15rem 0;
+		font-size: 0.9rem;
+		color: var(--reader-muted);
+	}
+	.series-line a {
+		color: var(--reader-link);
+		text-decoration: none;
+	}
+	.series-line a:hover {
 		text-decoration: underline;
 	}
 	.error {
