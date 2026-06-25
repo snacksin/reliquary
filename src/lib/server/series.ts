@@ -17,6 +17,22 @@ import { extractSeriesEntries, type ParsedSeries } from './epub';
  * (case-insensitive). The partial unique index on ao3_series_url backs the
  * URL path; the name path is matched app-layer (no DB uniqueness on name).
  */
+/**
+ * Find-or-create a name-only (URL-null) series by name, case-insensitively.
+ * The url-less identity path, shared by auto extraction (`resolveSeriesId`)
+ * and the manual "set series" POST endpoint — so typing a new series name and
+ * an auto-extracted url-less series both resolve to one row.
+ */
+export function findOrCreateSeriesByName(db: Database, name: string): number {
+	const existing = db
+		.prepare('SELECT id FROM series WHERE ao3_series_url IS NULL AND name = ? COLLATE NOCASE')
+		.get(name) as { id: number } | undefined;
+	if (existing) return existing.id;
+	return Number(
+		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name).lastInsertRowid
+	);
+}
+
 function resolveSeriesId(db: Database, entry: ParsedSeries): number {
 	if (entry.url) {
 		const existing = db.prepare('SELECT id FROM series WHERE ao3_series_url = ?').get(entry.url) as
@@ -28,14 +44,7 @@ function resolveSeriesId(db: Database, entry: ParsedSeries): number {
 				.lastInsertRowid
 		);
 	}
-	const existing = db
-		.prepare('SELECT id FROM series WHERE ao3_series_url IS NULL AND name = ? COLLATE NOCASE')
-		.get(entry.name) as { id: number } | undefined;
-	if (existing) return existing.id;
-	return Number(
-		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(entry.name)
-			.lastInsertRowid
-	);
+	return findOrCreateSeriesByName(db, entry.name);
 }
 
 /**
@@ -48,9 +57,15 @@ function resolveSeriesId(db: Database, entry: ParsedSeries): number {
  *
  * Always stamps `series_scanned_at`, even with an empty `entries`, so a
  * no-series work won't be re-scanned on the next boot.
+ *
+ * Series Pages Part 4: the delete is scoped to `manual = 0` so a user's
+ * manual "set series" assignment is NEVER wiped by the backfill, a re-scan, or
+ * a re-upload (e.g. a FicHub re-upload with no series metadata). The INSERT OR
+ * IGNORE below also can't override a manual row, since it'd collide on the
+ * (series_id, work_id) PK.
  */
 export function syncWorkSeries(db: Database, workId: string, entries: ParsedSeries[]): void {
-	db.prepare('DELETE FROM series_works WHERE work_id = ?').run(workId);
+	db.prepare('DELETE FROM series_works WHERE work_id = ? AND manual = 0').run(workId);
 	const link = db.prepare(
 		`INSERT OR IGNORE INTO series_works (series_id, work_id, position) VALUES (?, ?, ?)`
 	);
