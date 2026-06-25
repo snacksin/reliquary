@@ -264,6 +264,43 @@ export function extractCanonicalAo3Url(prefaceHtml: string): string | null {
 	return `https://archiveofourown.org/works/${m[1]}`;
 }
 
+/** Where an imported EPUB came from (Multi-Source Step 1). */
+export type WorkSource = 'ao3' | 'fichub-ao3' | 'fichub-ffn' | 'fichub-other' | 'unknown';
+
+/**
+ * Detect a work's source from its preface HTML (MS Step 1). Pure parsing, no
+ * DB — so it's identical for ingest (the freshly-parsed preface) and the
+ * startup backfill (the stored preface.html), the same file the AO3-URL
+ * extractor already reads.
+ *
+ * Precedence: the FicHub export footer is the strongest, most explicit signal
+ * (a couple of plain `<p>`s — `Original source: <a href>` + "Exported with the
+ * assistance of <a>FicHub.net</a>" — NOT in AO3's `<dl class="tags">`, which is
+ * why FicHub tags come up empty). The origin SITE comes from the "Original
+ * source:" link's domain. With no FicHub footer, the AO3-native "Posted
+ * originally …/works/<id>" marker (reused via `extractCanonicalAo3Url`) means
+ * `ao3`; otherwise `unknown`. In the real library these signals are mutually
+ * exclusive (0 prefaces carry both).
+ *
+ * (content.opf / spine-filename tiers are deferred — no fic needs them and
+ * epub2 doesn't expose `<dc:source>`. See MS.md.)
+ */
+export function detectSource(prefaceHtml: string): WorkSource {
+	if (!prefaceHtml) return 'unknown';
+	if (
+		/Exported with the assistance of[\s\S]{0,80}FicHub/i.test(prefaceHtml) ||
+		/fichub\.net/i.test(prefaceHtml)
+	) {
+		const m = prefaceHtml.match(/Original source:[\s\S]{0,80}?<a\b[^>]*\bhref="([^"]+)"/i);
+		const url = m?.[1] ?? '';
+		if (/fanfiction\.net/i.test(url)) return 'fichub-ffn';
+		if (/archiveofourown\.org/i.test(url)) return 'fichub-ao3';
+		return 'fichub-other';
+	}
+	if (extractCanonicalAo3Url(prefaceHtml) !== null) return 'ao3';
+	return 'unknown';
+}
+
 /** One series membership parsed from a preface "Series:" entry. */
 export type ParsedSeries = {
 	name: string;

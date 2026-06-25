@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
 import { backfillSeries } from './series';
+import { backfillSource } from './source';
 
 let cached: Database.Database | undefined;
 
@@ -70,6 +71,14 @@ export function getDb(): Database.Database {
 		backfillSeries(db);
 	} catch (e) {
 		console.error('[series-backfill] failed', e);
+	}
+
+	// Multi-Source Step 1: one-shot source classification from stored prefaces.
+	// Same guarded-once-per-boot shape — a failure here can never block boot.
+	try {
+		backfillSource(db);
+	} catch (e) {
+		console.error('[source-backfill] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more

@@ -5,6 +5,7 @@ import { getDb } from './db';
 import {
 	extractCanonicalAo3Url,
 	extractSeriesEntries,
+	detectSource,
 	parseEpub,
 	type ParsedChapter,
 	type ParsedEpub,
@@ -214,6 +215,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// Series Pages Part 1: memberships parsed from the preface "Series:" line.
 	// Written to series/series_works inside whichever write transaction fires.
 	const seriesEntries = extractSeriesEntries(prefaceChapter?.html ?? '');
+	// MS Step 1: where this EPUB came from (ao3 / fichub-* / unknown), from the
+	// same preface. Recorded on the works row; identical logic to the backfill.
+	const source = detectSource(prefaceChapter?.html ?? '');
 
 	const db = getDb();
 	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount);
@@ -343,7 +347,7 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		const updateWork = db.prepare(
 			`UPDATE works
 			   SET title = ?, author = ?, summary = ?, chapter_count = ?,
-			       content_hash = ?, trashed_at = NULL
+			       content_hash = ?, source = ?, trashed_at = NULL
 			 WHERE id = ?`
 		);
 		const updateChapter = db.prepare(
@@ -374,6 +378,7 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 					parsed.summary,
 					parsed.chapterCount,
 					contentHash,
+					source,
 					finalId
 				);
 
@@ -465,8 +470,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	}
 
 	const insertWork = db.prepare(
-		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
@@ -483,7 +488,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				parsed.chapterCount,
 				null,
 				sourceUrl,
-				contentHash
+				contentHash,
+				source
 			);
 			for (const ch of parsed.chapters) {
 				// Stamp per-chapter content_hash from creation so future
