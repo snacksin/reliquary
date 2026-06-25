@@ -495,8 +495,17 @@ export type SeriesSummary = {
 	hidden_from_index: boolean;
 };
 
-/** One series a work belongs to, for the preface "Part N of …" section. */
-export type WorkSeriesLink = { id: number; name: string; position: number | null };
+/**
+ * One series a work belongs to (preface "Part N of …" + the detail-page
+ * set-series UI). `manual` = a user-assigned link (Part 4), which the detail
+ * page lets you edit/remove and which the auto-paths never clobber.
+ */
+export type WorkSeriesLink = {
+	id: number;
+	name: string;
+	position: number | null;
+	manual: boolean;
+};
 
 /** A series + its owned parts (the /series/[id] page). */
 export async function getSeries(id: number | string, fetch: Fetch): Promise<Series> {
@@ -526,6 +535,55 @@ export async function getSeriesNav(workId: string, fetch: Fetch): Promise<Series
 	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series-nav`);
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+/**
+ * Manually assign a work to a series (Part 4). Pick an existing series by id
+ * or create/reuse one by name; optional position. Returns the new/updated link.
+ */
+export async function addWorkToSeries(
+	workId: string,
+	opts: { seriesId?: number; name?: string; position?: number | null },
+	fetch: Fetch
+): Promise<WorkSeriesLink> {
+	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			series_id: opts.seriesId,
+			name: opts.name,
+			position: opts.position ?? null
+		})
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Change a manual series link's position. */
+export async function updateWorkSeriesPosition(
+	workId: string,
+	seriesId: number,
+	position: number | null,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series/${seriesId}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ position })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Detach a work from a series (removes the link only). */
+export async function removeWorkFromSeries(
+	workId: string,
+	seriesId: number,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/works/${encodeURIComponent(workId)}/series/${seriesId}`, {
+		method: 'DELETE'
+	});
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 /** Every series you own a part of (the /series index, Part 2). */
