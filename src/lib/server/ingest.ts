@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeF
 import { join } from 'node:path';
 import { getDb } from './db';
 import {
-	extractCanonicalAo3Url,
+	extractSourceUrl,
 	extractSeriesEntries,
 	detectSource,
 	parseEpub,
@@ -210,7 +210,11 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// content_hash (normalized real-chapter content, id-independent) is
 	// the fallback. See identity.ts.
 	const prefaceChapter = parsed.chapters.find((c) => c.kind === 'preface');
-	const sourceUrl = extractCanonicalAo3Url(prefaceChapter?.html ?? '');
+	// MS Step 2: canonical original-source URL — AO3-native via the existing
+	// "Posted originally…" anchor, else FicHub's "Original source:" link
+	// normalized per site. Feeds M2.3's findMatch unchanged, so a FicHub
+	// re-upload now dedups instead of duplicating.
+	const sourceUrl = extractSourceUrl(prefaceChapter?.html ?? '');
 	const contentHash = computeContentHash(parseId, parsed.title, parsed.author, parsed.chapters);
 	// Series Pages Part 1: memberships parsed from the preface "Series:" line.
 	// Written to series/series_works inside whichever write transaction fires.
