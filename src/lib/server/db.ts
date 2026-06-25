@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
 import { backfillSeries } from './series';
-import { backfillSource } from './source';
+import { backfillSource, backfillSourceUrl } from './source';
 
 let cached: Database.Database | undefined;
 
@@ -79,6 +79,14 @@ export function getDb(): Database.Database {
 		backfillSource(db);
 	} catch (e) {
 		console.error('[source-backfill] failed', e);
+	}
+
+	// MS Step 2: recover source_url for FicHub fics (runs after backfillSource,
+	// which sets `source`). Guarded — a failure here can never block boot.
+	try {
+		backfillSourceUrl(db);
+	} catch (e) {
+		console.error('[source-url-backfill] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more

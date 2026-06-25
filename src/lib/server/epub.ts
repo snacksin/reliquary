@@ -301,6 +301,39 @@ export function detectSource(prefaceHtml: string): WorkSource {
 	return 'unknown';
 }
 
+/**
+ * Normalize an original-source href to a canonical, re-download-stable URL
+ * (MS Step 2). The canonical string is rebuilt from the work's numeric id per
+ * site, so a chapter index, title slug, query, or trailing slash on the source
+ * href is discarded by construction (two FicHub downloads of the same fic →
+ * the same key). Unrecognized sites return null → identity falls back to the
+ * content hash as before.
+ */
+function normalizeSourceUrl(href: string): string | null {
+	let m = href.match(/archiveofourown\.org\/works\/(\d+)/i);
+	if (m) return `https://archiveofourown.org/works/${m[1]}`;
+	m = href.match(/fanfiction\.net\/s\/(\d+)/i); // /s/<id>/<chapter>/<slug> → /s/<id>
+	if (m) return `https://www.fanfiction.net/s/${m[1]}`;
+	return null;
+}
+
+/**
+ * Recover a work's canonical original-source URL from its preface (MS Step 2 —
+ * the dedup identity key, broadened beyond AO3). AO3-native fics resolve via
+ * the existing `extractCanonicalAo3Url` "Posted originally…" anchor exactly as
+ * before; when that's absent (FicHub exports), fall back to FicHub's
+ * "Original source:" link (the same `<a>` `detectSource` reads) and normalize
+ * it per site. Stored in the existing `works.source_url` column so M2.3's
+ * `findMatch` picks it up unchanged.
+ */
+export function extractSourceUrl(prefaceHtml: string): string | null {
+	if (!prefaceHtml) return null;
+	const ao3 = extractCanonicalAo3Url(prefaceHtml);
+	if (ao3) return ao3;
+	const m = prefaceHtml.match(/Original source:[\s\S]{0,80}?<a\b[^>]*\bhref="([^"]+)"/i);
+	return m ? normalizeSourceUrl(m[1]) : null;
+}
+
 /** One series membership parsed from a preface "Series:" entry. */
 export type ParsedSeries = {
 	name: string;
