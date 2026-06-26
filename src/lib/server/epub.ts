@@ -139,6 +139,45 @@ function classify(
 }
 
 /**
+ * Content-heuristic classification (MS Step 3). A fallback used ONLY for FicHub
+ * exports, and ONLY when filename + title were inconclusive — so it never
+ * touches AO3-native fics (those match filename/title, and even when they fall
+ * to the position fallback they're never routed here). Inspects the item's
+ * HTML; returns null when nothing matches so the caller uses the position
+ * fallback (current behavior).
+ *
+ * The load-bearing rule is "substantial prose → chapter": FicHub fics have no
+ * afterword wrapper, so the position fallback's "last item → afterword" wrongly
+ * demotes the real last chapter (e.g. an 8429-word chapter). The FicHub
+ * metadata page ("Introduction") carries no `<dl class="tags">` — it's caught
+ * by its "Original source:"/FicHub-footer marker so it stays a preface.
+ */
+function classifyByContent(html: string): Classification {
+	if (!html) return null;
+	// Preface: AO3 tag block, or the FicHub metadata page's footer/source line.
+	if (
+		/<dl\b[^>]*class\s*=\s*(["'])[^"']*\b(?:tags|meta)\b/i.test(html) ||
+		/Exported with the assistance of[\s\S]{0,80}FicHub/i.test(html) ||
+		/Original source:/i.test(html)
+	) {
+		return 'preface';
+	}
+	// Afterword: an explicit end-notes / author's-notes wrapper.
+	if (/\bEnd Notes\b/i.test(html) || /\bAuthor['’]?s Notes\b/i.test(html)) {
+		return 'afterword';
+	}
+	// Chapter: substantial prose or a "Chapter <n>" heading.
+	const words = html
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&[a-z#0-9]+;/gi, ' ')
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean).length;
+	if (words >= 200 || /\bchapter\s+\w+/i.test(html)) return 'chapter';
+	return null;
+}
+
+/**
  * Map AO3 preface heading text (singular or plural, colon optional) to
  * the database tag category. Headings outside this map (Language,
  * Series, Collections, Stats, Words, Published, Updated, etc.) are
@@ -513,22 +552,17 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			return classifyByFilename(f.href) ?? classifyByTitle(f.title) ?? null;
 		});
 
-		// Pass 2: resolve nulls with position fallback.
-		const kinds: ChapterKind[] = flow.map((_: SpineItem, i: number) => {
-			if (provisional[i]) return provisional[i] as ChapterKind;
-			return classify(flow, i, provisional);
-		});
-
-		// Pass 3: number assignment + content fetch. Real chapters are 1..N
-		// in spine order; wrappers get their fixed-negative number.
-		const chapters: ParsedChapter[] = [];
-		let chapterIndex = 0;
-
+		// Fetch pass: pull each spine item's HTML up front (MS Step 3) so the
+		// content heuristic below can inspect it. `null` for id-less items
+		// (which never become chapters). Same epub2 calls + timeout + image
+		// rewrite as before — just hoisted ahead of classification.
+		const htmls: (string | null)[] = [];
 		for (let i = 0; i < flow.length; i++) {
 			const f = flow[i];
-			if (!f.id) continue;
-			const kind = kinds[i];
-
+			if (!f.id) {
+				htmls.push(null);
+				continue;
+			}
 			// Each chapter fetch is raced against a timeout AND wrapped in
 			// try/catch. If the chapter HTML can't be extracted for any
 			// reason — sync throw inside epub2, deferred error event, or a
@@ -546,7 +580,40 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 				const msg = e instanceof Error ? e.message : String(e);
 				throw new Error(`chapter extraction failed at spine index ${i} (${f.href ?? f.id}): ${msg}`);
 			}
-			const html = rewriteImageSrcs(rawHtml, workId);
+			htmls.push(rewriteImageSrcs(rawHtml, workId));
+		}
+
+		// MS Step 3: a FicHub export stamps "Exported with the assistance of
+		// FicHub.net" into its metadata page. Detect it from raw HTML —
+		// independent of classification — so the content heuristic routes
+		// FicHub fics only. AO3-native fics never reach `classifyByContent`,
+		// so their classification + chapter_count stay byte-identical.
+		const isFicHub = htmls.some(
+			(h) => h !== null && /Exported with the assistance of[\s\S]{0,80}FicHub/i.test(h)
+		);
+
+		// Pass 2: resolve nulls — content heuristic for FicHub (fallback to
+		// position when inconclusive), plain position fallback otherwise.
+		const kinds: ChapterKind[] = flow.map((_: SpineItem, i: number) => {
+			if (provisional[i]) return provisional[i] as ChapterKind;
+			if (isFicHub && htmls[i] !== null) {
+				const byContent = classifyByContent(htmls[i] as string);
+				if (byContent) return byContent;
+			}
+			return classify(flow, i, provisional);
+		});
+
+		// Pass 3: number assignment using the already-fetched HTML. Real
+		// chapters are 1..N in spine order; wrappers get their fixed-negative
+		// number. chapter_count (below) recomputes from these kinds.
+		const chapters: ParsedChapter[] = [];
+		let chapterIndex = 0;
+
+		for (let i = 0; i < flow.length; i++) {
+			const f = flow[i];
+			if (!f.id || htmls[i] === null) continue;
+			const kind = kinds[i];
+			const html = htmls[i] as string;
 
 			let number: number;
 			if (kind === 'chapter') {
