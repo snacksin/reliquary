@@ -177,6 +177,55 @@ function classifyByContent(html: string): Classification {
 	return null;
 }
 
+/** Plain-text word count of an HTML fragment (tags + entity refs stripped). */
+function wordCount(html: string): number {
+	return html
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&[a-z#0-9]+;/gi, ' ')
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean).length;
+}
+
+/**
+ * Nav/TOC spine item (MS Step 4 Part A). FicHub exports include a navigation
+ * page — an `<h1>` + a list of internal links to the other spine docs (raw
+ * `/links/chapter_N/EPUB/…` paths that 404) with little/no prose — that
+ * otherwise lands as chapter 1. It's "mostly links, no prose": several links
+ * and far fewer words than a real chapter (WoW: 7 words / 2 links; Of Beating
+ * Hearts: 73 / 14). A real chapter has words ≫ links, so the "substantial
+ * prose → chapter" guard keeps incidental-link chapters safe. FicHub-gated by
+ * the caller (this is a FicHub artifact; AO3 spines don't carry it).
+ */
+function isNavToc(html: string): boolean {
+	const links = (html.match(/<a\b/gi) || []).length;
+	return links >= 2 && wordCount(html) < links * 12;
+}
+
+/**
+ * The title-page half of a split chapter (MS Step 4 Part B). Some EPUBs (incl.
+ * AO3-native ones like "Dead Reckoning") split a chapter into a short spine
+ * item whose heading is the chapter title — often ALSO carrying a brief
+ * chapter note / epigraph / content warning — immediately followed by the
+ * (long) content item, doubling the chapter count.
+ *
+ * Detection: a chapter-style heading ("Chapter N…" or "N. …") plus a small
+ * word count. The cap is generous (a few hundred words) because a real chapter
+ * runs thousands — the gap is huge (Dead Reckoning: title pages ≤43 words vs
+ * content ≥2.4k) — so a title page with a note still matches while no full
+ * chapter does. The caller adds the decisive guard that the NEXT item is an
+ * *untitled* content page, so a normal (titled) chapter — even a short drabble
+ * — and a genuine standalone note are never swallowed. Pattern-gated (any
+ * source); normal fics never match → byte-identical.
+ */
+function isBareTitlePage(html: string): boolean {
+	const m = html.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
+	if (!m) return false;
+	const heading = decodeEntities(m[1].replace(/<[^>]+>/g, ' ')).trim();
+	if (!/\bchapter\b\s*\d+/i.test(heading) && !/^\d+\s*[.:]/.test(heading)) return false;
+	return wordCount(html) < 300;
+}
+
 /**
  * Map AO3 preface heading text (singular or plural, colon optional) to
  * the database tag category. Headings outside this map (Language,
@@ -594,41 +643,67 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 
 		// Pass 2: resolve nulls — content heuristic for FicHub (fallback to
 		// position when inconclusive), plain position fallback otherwise.
-		const kinds: ChapterKind[] = flow.map((_: SpineItem, i: number) => {
+		// `'skip'` (MS Step 4 Part A) drops a FicHub nav/TOC page entirely.
+		const kinds: (ChapterKind | 'skip')[] = flow.map((_: SpineItem, i: number) => {
 			if (provisional[i]) return provisional[i] as ChapterKind;
 			if (isFicHub && htmls[i] !== null) {
 				const byContent = classifyByContent(htmls[i] as string);
+				// The FicHub metadata page carries link(s) too, so resolve a
+				// preface signal (footer / <dl tags>) BEFORE nav detection — a
+				// preface is never a nav/TOC.
+				if (byContent === 'preface') return 'preface';
+				if (isNavToc(htmls[i] as string)) return 'skip';
 				if (byContent) return byContent;
 			}
 			return classify(flow, i, provisional);
 		});
 
-		// Pass 3: number assignment using the already-fetched HTML. Real
-		// chapters are 1..N in spine order; wrappers get their fixed-negative
-		// number. chapter_count (below) recomputes from these kinds.
-		const chapters: ParsedChapter[] = [];
-		let chapterIndex = 0;
-
+		// Pass 3: build chapters in spine order from the already-fetched HTML.
+		// `'skip'` items (nav/TOC, Part A) are dropped — no row, no file, not
+		// counted. Chapter numbers are assigned in the finalize pass below
+		// (after the Part B merge), so we leave a placeholder here.
+		const built: ParsedChapter[] = [];
 		for (let i = 0; i < flow.length; i++) {
 			const f = flow[i];
 			if (!f.id || htmls[i] === null) continue;
 			const kind = kinds[i];
-			const html = htmls[i] as string;
+			if (kind === 'skip') continue;
 
-			let number: number;
-			if (kind === 'chapter') {
-				chapterIndex += 1;
-				number = chapterIndex;
-			} else {
-				number = WRAPPER_NUMBER[kind];
-			}
-
-			chapters.push({
-				number,
+			built.push({
+				number: kind === 'chapter' ? 0 : WRAPPER_NUMBER[kind],
 				kind,
-				title: f.title?.trim() || null,
-				html
+				// Decode HTML entities so chapter titles read "Stitches &
+				// Witches", not the raw "Stitches &amp; Witches".
+				title: f.title ? decodeEntities(f.title).trim() || null : null,
+				html: htmls[i] as string
 			});
+		}
+
+		// Finalize (MS Step 4 Part B): merge title-page splits, then number the
+		// real chapters 1..N. A short chapter-title page immediately followed by
+		// an *untitled* content chapter is a split half — concat the two into one
+		// logical chapter, keeping the title page's title. The untitled-next
+		// guard means a normal (titled) chapter, even a short one, never merges,
+		// so normal fics stay byte-identical.
+		const chapters: ParsedChapter[] = [];
+		for (let i = 0; i < built.length; i++) {
+			const c = built[i];
+			const next = built[i + 1];
+			if (
+				c.kind === 'chapter' &&
+				next?.kind === 'chapter' &&
+				!next.title &&
+				isBareTitlePage(c.html)
+			) {
+				chapters.push({ ...next, title: c.title ?? next.title, html: c.html + next.html });
+				i += 1; // the content item was merged in
+			} else {
+				chapters.push(c);
+			}
+		}
+		let chapterIndex = 0;
+		for (const c of chapters) {
+			if (c.kind === 'chapter') c.number = (chapterIndex += 1);
 		}
 
 		const chapterCount = chapters.filter((c) => c.kind === 'chapter').length;
