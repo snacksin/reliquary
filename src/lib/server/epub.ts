@@ -162,18 +162,18 @@ function classifyByContent(html: string): Classification {
 	) {
 		return 'preface';
 	}
-	// Afterword: an explicit end-notes / author's-notes wrapper.
+	// Chapter: substantial prose or a "Chapter <n>" heading. Checked BEFORE the
+	// afterword rule so a multi-thousand-word chapter that merely ENDS with an
+	// author's note is a chapter, not an afterword — otherwise several such
+	// chapters all take WRAPPER_NUMBER.afterword (-3) and collide on the
+	// UNIQUE(work_id, number) insert. The afterword rule below is thereby left
+	// to genuinely note-only sections (short, no chapter heading).
+	const words = wordCount(html);
+	if (words >= 200 || /\bchapter\s+\w+/i.test(html)) return 'chapter';
+	// Afterword: an explicit end-notes / author's-notes wrapper (short item).
 	if (/\bEnd Notes\b/i.test(html) || /\bAuthor['’]?s Notes\b/i.test(html)) {
 		return 'afterword';
 	}
-	// Chapter: substantial prose or a "Chapter <n>" heading.
-	const words = html
-		.replace(/<[^>]+>/g, ' ')
-		.replace(/&[a-z#0-9]+;/gi, ' ')
-		.trim()
-		.split(/\s+/)
-		.filter(Boolean).length;
-	if (words >= 200 || /\bchapter\s+\w+/i.test(html)) return 'chapter';
 	return null;
 }
 
@@ -701,6 +701,19 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 				chapters.push(c);
 			}
 		}
+		// Defense-in-depth: a wrapper kind maps to a single fixed negative
+		// number (WRAPPER_NUMBER), so two items of the same wrapper kind would
+		// collide on the UNIQUE(work_id, number) insert. Keep the first of each
+		// wrapper kind and demote any later duplicate to a chapter, which the
+		// renumber pass then gives a clean 1..N number. This makes the insert
+		// structurally safe regardless of how classification turns out.
+		const seenWrapper = new Set<ChapterKind>();
+		for (const c of chapters) {
+			if (c.kind === 'chapter') continue;
+			if (seenWrapper.has(c.kind)) c.kind = 'chapter';
+			else seenWrapper.add(c.kind);
+		}
+
 		let chapterIndex = 0;
 		for (const c of chapters) {
 			if (c.kind === 'chapter') c.number = (chapterIndex += 1);
