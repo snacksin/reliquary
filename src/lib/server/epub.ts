@@ -2,7 +2,8 @@ import { EPub } from 'epub2';
 import { randomUUID } from 'node:crypto';
 import { writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join, posix } from 'node:path';
+import { resolve as resolveUrl } from 'node:url';
 
 export type ChapterKind = 'preface' | 'summary' | 'chapter' | 'afterword';
 
@@ -510,18 +511,25 @@ export function extractSeriesEntries(html: string): ParsedSeries[] {
  * (data/works/<id>/images/<basename>).
  */
 /**
- * Race a promise against a hard timeout. epub2 has at least one known
- * shape where an internal `String.replace` callback throws
- * synchronously inside an EventEmitter handler (the
- * `linkparts.shift is not a function` case on certain AO3 EPUBs).
- * When that happens, the `await book.getChapterAsync(id)` for the
- * affected spine item neither resolves nor rejects — it hangs
- * forever, which hangs `parseEpub`, the upload endpoint, and the UI.
+ * Race a promise against a hard timeout. A generic safety net around the
+ * epub2 calls we still make (`getChapterRawAsync` for chapter text,
+ * `getImageAsync` for embedded images): if any of them hangs — a corrupt
+ * ZIP entry, a deferred internal error that never settles the callback —
+ * the await eventually rejects instead of stalling `parseEpub`, the
+ * upload endpoint, and the UI.
  *
- * Wrapping each epub2 call in this race guarantees the await
- * eventually settles. 10 seconds is generous for a real
- * extraction (in-memory ZIP reads complete in < 100 ms on healthy
- * data) and short enough that a hung request fails fast.
+ * Historically this also masked the `linkparts.shift is not a function`
+ * hang on certain AO3 EPUBs (an empty `href=""` made epub2's chapter
+ * link-rewrite throw synchronously inside the read callback, so
+ * `getChapterAsync` never settled). That class is now fixed at the
+ * source: chapter HTML is post-processed by `chapterHtmlFromBook` below
+ * (a faithful port of epub2's transform with the rewrite bug fixed), and
+ * we no longer call the broken `getChapterAsync` at all. The timeout
+ * stays purely as belt-and-suspenders.
+ *
+ * 10 seconds is generous for a real extraction (in-memory ZIP reads
+ * complete in < 100 ms on healthy data) and short enough that a hung
+ * request fails fast.
  */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
@@ -552,6 +560,131 @@ function rewriteImageSrcs(html: string, workId: string): string {
 		const filename = path.split('/').pop() || path;
 		return `${attr}=${quote}/api/works/${workId}/images/${filename}`;
 	});
+}
+
+/**
+ * The subset of epub2's internal `EPub` instance that `chapterHtmlFromBook`
+ * reads. epub2 doesn't re-export these on its TypeScript surface (they're
+ * set up during `parse()`), so we name the runtime fields we touch and
+ * reach them through a cast — the same pattern the deferred-`error`
+ * listener in `parseEpub` already uses for `book.on`.
+ */
+type EpubManifestEntry = { id?: string; href: string; 'media-type'?: string };
+type EpubInternals = {
+	manifest: Record<string, EpubManifestEntry>;
+	rootFile: string;
+	imageroot: string;
+	linkroot: string;
+	getChapterRawAsync(id: string): Promise<string>;
+};
+
+/**
+ * Extract a chapter's HTML the way epub2's `getChapter` does — but without
+ * its crash. The bug lives ONLY in epub2's post-read transform
+ * (`lib/epub.js` `getChapter`), not in its ZIP read: an empty/edge-case
+ * `href=""` makes the link-rewrite do `(b && b.split("#")).shift()`, where
+ * `"" && …` is the string `""`, so `.shift()` throws
+ * `TypeError: linkparts.shift is not a function` synchronously inside the
+ * read callback — escaping to `uncaughtException` and hanging the await.
+ *
+ * So we keep epub2's safe raw read (`getChapterRawAsync` — mime check, ZIP
+ * href→entry resolution incl. the percent-decode fallback, CRLF
+ * normalization) and re-do only the transform here, as a faithful port of
+ * `getChapter` (epub2 3.0.2, lib/epub.js:607–708). The SINGLE deviation is
+ * `(b || "").split("#")` in the link-rewrite, which is always an array — so
+ * an empty href yields `linkparts = [""]`, matches no manifest entry, and
+ * the rewriter returns `href=""` unchanged: byte-for-byte what epub2 emits
+ * for every chapter it CAN parse, and crash-free for the ones it can't.
+ * This removes the whole class (any malformed href), not just this one fic.
+ *
+ * Output is pre-`rewriteImageSrcs`: image srcs carry the `imageroot`
+ * sentinel exactly as epub2 would emit it, so the existing post-processing
+ * downstream is unchanged.
+ */
+async function chapterHtmlFromBook(book: EPub, id: string): Promise<string> {
+	const internals = book as unknown as EpubInternals;
+	let str = await withTimeout(
+		internals.getChapterRawAsync(id),
+		EPUB_CALL_TIMEOUT_MS,
+		`getChapterRawAsync(${id})`
+	);
+
+	const meta = internals.manifest[id];
+	const manifest = internals.manifest;
+	const keys = Object.keys(manifest);
+	// Directory segments of the OPF root file, e.g. "OEBPS/content.opf" → ["OEBPS"].
+	const path = internals.rootFile.split('/');
+	path.pop();
+	const basePath = dirname(meta.href);
+
+	// remove linebreaks (no multi-line matches in JS regex!) — epub2 parks them
+	// as NUL so the single-line `.` regexes below can span the whole document,
+	// then restores them at the very end.
+	str = str.replace(/\r?\n/g, '\u0000');
+	// keep only <body> contents (only reassigns when the body tag is present)
+	str.replace(/<body[^>]*?>(.*)<\/body[^>]*?>/i, (_o: string, d: string) => {
+		str = d.trim();
+		return _o;
+	});
+	// remove <script> blocks if any
+	str = str.replace(/<script[^>]*?>(.*?)<\/script[^>]*?>/gi, () => '');
+	// remove <style> blocks if any
+	str = str.replace(/<style[^>]*?>(.*?)<\/style[^>]*?>/gi, () => '');
+	// remove onEvent handlers
+	str = str.replace(
+		/(\s)(on\w+)(\s*=\s*["']?[^"'\s>]*?["'\s>])/g,
+		(_o, a: string, b: string, c: string) => a + 'skip-' + b + c
+	);
+	// replace images
+	str = str.replace(
+		/(?<=\s|^)(src\s*=\s*)(["']?)([^"'\n]*?)(\2)/g,
+		(o, a: string, d: string, b: string, c: string) => {
+			const img = posix.join(basePath, b);
+			let element: EpubManifestEntry | undefined;
+			for (const key of keys) {
+				const href = manifest[key].href;
+				if ([href, decodeURI(href), encodeURI(href)].includes(img)) {
+					element = manifest[key];
+					break;
+				}
+			}
+			if (element) {
+				return a + d + resolveUrl(internals.imageroot, img) + c;
+			}
+			return o;
+		}
+	);
+	// replace links — the fix is `(b || "")` so `linkparts` is always an array
+	str = str.replace(
+		/(\shref\s*=\s*["']?)([^"'\s>]*?)(["'\s>])/g,
+		(_o, a: string, b: string, c: string) => {
+			const linkparts = (b || '').split('#');
+			let link = path
+				.concat([linkparts.shift() || ''])
+				.join('/')
+				.trim();
+			let element: EpubManifestEntry | undefined;
+			for (const key of keys) {
+				if (manifest[key].href.split('#')[0] === link) {
+					element = manifest[key];
+					break;
+				}
+			}
+			if (linkparts.length) {
+				link += '#' + linkparts.join('#');
+			}
+			// include only links from the manifest; otherwise keep the original href
+			if (element) {
+				return a + internals.linkroot + element.id + '/' + link + c;
+			}
+			return a + b + c;
+		}
+	);
+	// bring back linebreaks. The NUL placeholder is intentional (it round-trips
+	// the parked newlines and can't occur in valid XHTML); matches epub2.
+	// eslint-disable-next-line no-control-regex
+	str = str.replace(/\u0000/g, '\n').trim();
+	return str;
 }
 
 export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedEpub> {
@@ -612,22 +745,23 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 				htmls.push(null);
 				continue;
 			}
-			// Each chapter fetch is raced against a timeout AND wrapped in
-			// try/catch. If the chapter HTML can't be extracted for any
-			// reason — sync throw inside epub2, deferred error event, or a
-			// hang — the whole parse rejects with a clean error rather
-			// than silently dropping the chapter (which would produce a
-			// half-imported fic) or hanging forever.
+			// Each chapter's HTML is extracted by `chapterHtmlFromBook` (our
+			// crash-free port of epub2's getChapter transform) over epub2's
+			// safe raw read, itself raced against a timeout. Wrapped in
+			// try/catch so that if the chapter HTML can't be extracted for any
+			// reason — a corrupt entry, a deferred error event, or a hang —
+			// the whole parse rejects with a clean error rather than silently
+			// dropping the chapter (which would produce a half-imported fic)
+			// or hanging forever.
 			let rawHtml: string;
 			try {
-				rawHtml = await withTimeout(
-					book.getChapterAsync(f.id),
-					EPUB_CALL_TIMEOUT_MS,
-					`getChapterAsync(${f.id})`
-				);
+				rawHtml = await chapterHtmlFromBook(book, f.id);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				throw new Error(`chapter extraction failed at spine index ${i} (${f.href ?? f.id}): ${msg}`);
+				throw new Error(
+					`chapter extraction failed at spine index ${i} (${f.href ?? f.id}): ${msg}`,
+					{ cause: e }
+				);
 			}
 			htmls.push(rewriteImageSrcs(rawHtml, workId));
 		}
