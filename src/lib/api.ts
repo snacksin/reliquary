@@ -2,6 +2,19 @@ export type LastRead = {
 	chapter: number;
 	scroll_y: number;
 	/**
+	 * Furthest real chapter read to ~95% (the reader's auto-mark high-water
+	 * mark). Drives "finished" in Continue Reading: a work is finished when
+	 * `max_read_chapter >= chapter_count`. Null on pre-existing rows (read as
+	 * 0 — nothing confirmed read-to-end).
+	 */
+	max_read_chapter: number | null;
+	/**
+	 * Sticky Continue-Reading dismissal (the ×). Non-null = dismissed → hidden
+	 * from the carousel even when new chapters arrive; cleared by reading the
+	 * work again.
+	 */
+	dismissed_at: string | null;
+	/**
 	 * ISO 8601 timestamp of the last write to `reading_progress.updated_at`
 	 * for this work — used by the library to sort the Continue Reading
 	 * carousel by reading recency, not by upload order.
@@ -17,6 +30,13 @@ export type Work = {
 	chapter_count: number;
 	word_count: number | null;
 	last_read: LastRead | null;
+	/**
+	 * ISO 8601 timestamp of when this work last GREW its chapter count via an
+	 * update-in-place re-upload. Lets the Continue Reading carousel bump a
+	 * resurfaced (newly-grown) work up to its new-chapter time. Null = never
+	 * grown since ingest.
+	 */
+	chapters_updated_at: string | null;
 	is_favorite: boolean;
 	/**
 	 * ISO 8601 timestamp set by POST /api/works/[id]/favorite. Used
@@ -225,12 +245,13 @@ export async function saveProgress(
 	workId: string,
 	chapter: number,
 	scroll_y: number,
+	completed: boolean,
 	fetch: Fetch
 ): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/progress`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ chapter, scroll_y: Math.round(scroll_y) })
+		body: JSON.stringify({ chapter, scroll_y: Math.round(scroll_y), completed })
 	});
 	if (!res.ok) throw new Error(await extractError(res));
 }
