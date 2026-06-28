@@ -28,12 +28,50 @@ export const PURGE_AFTER_DAYS = 30;
  * never a DB row pointing at missing files (which would break the
  * reader). The rm is best-effort and logged.
  *
+ * Empty-series cleanup: a hard purge removes the work's `series_works`
+ * links (the FK cascade), which can leave a `series` row with zero
+ * members — an orphan invisible in every live-only surface. We capture
+ * the work's series ids BEFORE the cascade, then delete any that are now
+ * empty. Scoped to this work's own series (not a global sweep) so the
+ * count is accurate. Only ALL-members-purged series go: a series with any
+ * other member, live OR still-trashed, keeps its link and is untouched —
+ * and since this runs only on hard purge (never soft-trash), restoring a
+ * trashed work always brings its series back. Guarded so it can never
+ * block the purge.
+ *
  * Returns true if a `works` row was actually deleted (false if the id
  * didn't exist).
  */
 export function purgeWork(db: Database, id: string): boolean {
+	// Capture before the DELETE — the FK cascade wipes these links.
+	const seriesIds = (
+		db.prepare('SELECT series_id FROM series_works WHERE work_id = ?').all(id) as {
+			series_id: number;
+		}[]
+	).map((r) => r.series_id);
+
 	const result = db.prepare('DELETE FROM works WHERE id = ?').run(id);
 	const deleted = result.changes > 0;
+
+	if (deleted && seriesIds.length > 0) {
+		try {
+			const hasMember = db.prepare('SELECT 1 FROM series_works WHERE series_id = ? LIMIT 1');
+			const deleteSeries = db.prepare('DELETE FROM series WHERE id = ?');
+			let removed = 0;
+			for (const seriesId of seriesIds) {
+				if (hasMember.get(seriesId) === undefined) {
+					deleteSeries.run(seriesId);
+					removed += 1;
+				}
+			}
+			if (removed > 0) console.log(`[purge] ${removed} empty series removed`);
+		} catch (e) {
+			console.error(
+				`[purge] removed work ${id} but empty-series cleanup failed:`,
+				e instanceof Error ? e.message : e
+			);
+		}
+	}
 
 	try {
 		rmSync(join('data', 'works', id), { recursive: true, force: true });

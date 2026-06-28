@@ -33,6 +33,42 @@ export function findOrCreateSeriesByName(db: Database, name: string): number {
 	);
 }
 
+/**
+ * Resolve a manual "Set series → create by name" assignment to a `series.id`,
+ * deduping against ALL existing series — including ones whose member works are
+ * all trashed (and therefore hidden from the live-only assign picker). This is
+ * the trashed-member-series dedupe fix: typing the name of such a series
+ * re-links to its existing row instead of inserting a duplicate.
+ *
+ * Differs from `findOrCreateSeriesByName` (the auto-extraction path, left
+ * untouched) in ONE way: the name match is NOT scoped to `ao3_series_url IS
+ * NULL`, so a URL-bearing AO3 series whose only member is trashed is matched by
+ * name too — that's the case the URL-null-scoped resolver missed, the actual
+ * source of the duplicate. Same normalization as everywhere else: `trim` (by
+ * the caller) + case-insensitive `COLLATE NOCASE`.
+ *
+ * When a typed name matches multiple series (distinct series can share a name),
+ * the tie-break is deterministic: prefer a URL-bearing (canonical AO3) row over
+ * a URL-less one, then the most-recently-created (`id DESC`). No mid-assign
+ * error — the colliding series is hidden from the live picker, so the user
+ * couldn't act on one anyway. Only when NOTHING matches do we create a new
+ * url-less row (the genuinely-new-name case, identical to before).
+ */
+export function findOrCreateSeriesByNameAcrossTrash(db: Database, name: string): number {
+	const existing = db
+		.prepare(
+			`SELECT id FROM series
+			  WHERE name = ? COLLATE NOCASE
+			  ORDER BY (ao3_series_url IS NULL) ASC, id DESC
+			  LIMIT 1`
+		)
+		.get(name) as { id: number } | undefined;
+	if (existing) return existing.id;
+	return Number(
+		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name).lastInsertRowid
+	);
+}
+
 function resolveSeriesId(db: Database, entry: ParsedSeries): number {
 	if (entry.url) {
 		const existing = db.prepare('SELECT id FROM series WHERE ao3_series_url = ?').get(entry.url) as

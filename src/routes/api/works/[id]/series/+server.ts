@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
-import { findOrCreateSeriesByName } from '$lib/server/series';
+import { findOrCreateSeriesByNameAcrossTrash } from '$lib/server/series';
 
 /**
  * `GET /api/works/[id]/series` — the series this work belongs to, for the
@@ -32,10 +32,11 @@ function workExists(db: ReturnType<typeof getDb>, id: string): boolean {
 /**
  * `POST /api/works/[id]/series` — manually assign the work to a series (Part 4).
  * Body: { series_id?, name?, position? }. Pick an existing series by id, or
- * create/reuse a name-only series by name (so picking an existing AO3 series
- * unifies; only a brand-new name makes a row). Upserts the link with
- * `manual = 1` — also overriding an auto link's position and protecting it
- * from future auto-refresh. Returns the resulting link.
+ * resolve a name to an existing series — across ALL series, including ones whose
+ * members are all trashed (so re-adding by name unifies instead of duplicating);
+ * only a genuinely-new name makes a row. Upserts the link with `manual = 1` —
+ * also overriding an auto link's position and protecting it from future
+ * auto-refresh. Returns the resulting link.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const db = getDb();
@@ -70,7 +71,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		}
 		seriesId = series_id;
 	} else if (typeof name === 'string' && name.trim().length > 0) {
-		seriesId = findOrCreateSeriesByName(db, name.trim());
+		// Dedupe-on-create: match an existing series by name across ALL series,
+		// including ones whose member works are all trashed (and thus hidden from
+		// the live-only assign picker), so re-adding by name re-links instead of
+		// duplicating. See findOrCreateSeriesByNameAcrossTrash.
+		seriesId = findOrCreateSeriesByNameAcrossTrash(db, name.trim());
 	} else {
 		throw error(400, 'provide a series_id or a non-empty name');
 	}
