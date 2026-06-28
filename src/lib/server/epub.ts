@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, posix } from 'node:path';
-import { resolve as resolveUrl } from 'node:url';
 
 export type ChapterKind = 'preface' | 'summary' | 'chapter' | 'afterword';
 
@@ -563,6 +562,51 @@ function rewriteImageSrcs(html: string, workId: string): string {
 }
 
 /**
+ * The exact set of characters legacy `url.parse()` percent-escapes inside a path
+ * *segment* (i.e. not at the leading position). Derived by brute-forcing
+ * `url.resolve('/x/', 'OEBPS/a<CH>b.jpg')` over every codepoint 0x00–0xFFFF: the
+ * complete set is TAB/LF/CR + space `" ' < > ^ \` { | }`. (Legacy `url` also
+ * rewrites `\`→`/`; that's handled separately below.)
+ */
+const LEGACY_PATH_ESCAPE = /[\t\n\r "'<>^`{|}]/g;
+
+/**
+ * Byte-for-byte replacement for the `url.resolve(imageroot, img)` epub2 used to
+ * rewrite `<img src>` paths — without the deprecated legacy URL parser (DEP0169;
+ * `url.resolve` calls `url.parse` internally). This output lands in the stored
+ * chapter HTML and thus in the chapter `content_hash` (see `identity.ts`), so it
+ * must match the old bytes exactly or re-uploads stop deduping.
+ *
+ * `imageroot` always ends in `/` (epub2's constructor enforces it; we pass the
+ * `/__reliquary_img__/` sentinel), and `img` is `posix.join(dirname(href), src)`
+ * — already normalized, so `//`, `./` and `../` are collapsed before we run.
+ * `url.resolve` then degenerates to `imageroot` + the legacy *segment* escape of
+ * `img` (the regex above) with `\`→`/`, which this reproduces for every codepoint.
+ *
+ * The only `url.parse` behaviors NOT reproduced are *positional*: it trims
+ * leading whitespace/controls and treats a leading `scheme:` specially. Those
+ * are unreachable — the branch only fires when `img` exactly matches a manifest
+ * href (a real ZIP file path), which has no leading whitespace and no `scheme:`
+ * first segment, and `posix.join(dirname(chapterHref), …)` can't produce one for
+ * any non-root chapter. (Verified: byte-parity over the whole EPUB corpus —
+ * 1373 books / 2578 image hrefs / 9215 chapters — shows 0 differences.)
+ *
+ * NOTE: TAB/CR/LF are `< 0x10`, so the `.padStart(2, '0')` is load-bearing —
+ * without it `0x09` would emit `%9` instead of `%09`.
+ */
+function joinImageRoot(imageroot: string, img: string): string {
+	return (
+		imageroot +
+		img
+			.replace(/\\/g, '/')
+			.replace(
+				LEGACY_PATH_ESCAPE,
+				(c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+			)
+	);
+}
+
+/**
  * The subset of epub2's internal `EPub` instance that `chapterHtmlFromBook`
  * reads. epub2 doesn't re-export these on its TypeScript surface (they're
  * set up during `parse()`), so we name the runtime fields we touch and
@@ -649,7 +693,7 @@ async function chapterHtmlFromBook(book: EPub, id: string): Promise<string> {
 				}
 			}
 			if (element) {
-				return a + d + resolveUrl(internals.imageroot, img) + c;
+				return a + d + joinImageRoot(internals.imageroot, img) + c;
 			}
 			return o;
 		}
