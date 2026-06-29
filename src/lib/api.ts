@@ -261,6 +261,16 @@ export async function removeProgress(workId: string, fetch: Fetch): Promise<void
 	if (!res.ok) throw new Error(await extractError(res));
 }
 
+/**
+ * "Read again" — reset a finished work's resumable reading progress so it
+ * restarts as a fresh read and re-enters Continue Reading at Chapter 1. Only
+ * touches reading_progress (never the decoupled works.read_at "read" mark).
+ */
+export async function readAgain(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/progress`, { method: 'PUT' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
 export async function setFavorite(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/favorite`, { method: 'POST' });
 	if (!res.ok) throw new Error(await extractError(res));

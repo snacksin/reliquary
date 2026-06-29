@@ -6,7 +6,9 @@
 		trashWork,
 		restoreWork,
 		removeProgress,
-		daysUntilPurge
+		readAgain,
+		daysUntilPurge,
+		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
@@ -41,6 +43,17 @@
 	const hasPreface = $derived(data.work.chapters.some((c) => c.kind === 'preface'));
 	const hasAfterword = $derived(data.work.chapters.some((c) => c.kind === 'afterword'));
 
+	// Optimistic "Read again" override (set by handleReadAgain below). When
+	// non-null it overlays a fresh-start last_read onto the work locally, so the
+	// Continue / Read-again UI flips instantly WITHOUT invalidateAll() — which
+	// would re-run the page load and flash the nav spinner (the PR #48
+	// favorite-flash symptom). `crWork` is the work the Continue-Reading-state
+	// UI reads from; null override → plain server data.
+	let readAgainProgress: LastRead | null = $state(null);
+	const crWork = $derived(
+		readAgainProgress ? { ...data.work, last_read: readAgainProgress } : data.work
+	);
+
 	// Optimistic local override so the heart toggle feels instantaneous.
 	// Set on click, cleared once invalidateAll re-fetches (fresh
 	// data.work.is_favorite then takes over). Initial null = "no
@@ -60,7 +73,7 @@
 	// the button hides instantly before invalidateAll re-fetches the dismissal.
 	let crRemoved = $state(false);
 	let crRemoveError: string | null = $state(null);
-	const showRemoveFromCR = $derived(inContinueReading(data.work) && !crRemoved);
+	const showRemoveFromCR = $derived(inContinueReading(crWork) && !crRemoved);
 
 	async function handleRemoveFromCR() {
 		crRemoved = true;
@@ -71,6 +84,48 @@
 		} catch (e) {
 			crRemoved = false; // revert
 			crRemoveError = e instanceof Error ? e.message : 'Could not remove from Continue Reading';
+		}
+	}
+
+	// ─── Read again (restart a finished fic) ─────────────────────────
+	// Resets resumable progress server-side so the fic re-enters Continue
+	// Reading at Chapter 1 and tracks the whole re-read (the existing #62
+	// in-progress logic does the rest). The UI flips OPTIMISTICALLY via
+	// `readAgainProgress`/`crWork` above — no invalidateAll(), so no nav-spinner
+	// flash (the PR #48 favorite-flash fix); the PUT persists in the background
+	// and we revert the override only on failure. On success we also clear this
+	// work's per-chapter saved scroll in localStorage — the reader restores
+	// scroll from localStorage, not the server row, so without this the
+	// post-reset "Continue from Chapter 1" would jump to the stale near-bottom
+	// position from the prior read instead of starting at the top. Cleared keys
+	// re-populate naturally as the re-read progresses, so resumability is
+	// unaffected. Does NOT touch any "read" mark — that's the you-layer's.
+	let readingAgain = $state(false);
+	let readAgainError: string | null = $state(null);
+
+	async function handleReadAgain() {
+		if (readingAgain) return;
+		readingAgain = true;
+		readAgainError = null;
+		const previous = readAgainProgress;
+		// Optimistic flip: a fresh in-progress read starting at Chapter 1.
+		readAgainProgress = {
+			chapter: 1,
+			scroll_y: 0,
+			max_read_chapter: 0,
+			dismissed_at: null,
+			updated_at: new Date().toISOString()
+		};
+		try {
+			await readAgain(data.work.id, fetch);
+			for (const ch of realChapters) {
+				localStorage.removeItem(`scroll:${data.work.id}:${ch.number}`);
+			}
+		} catch (e) {
+			readAgainProgress = previous; // revert the optimistic flip
+			readAgainError = e instanceof Error ? e.message : 'Could not restart this fic';
+		} finally {
+			readingAgain = false;
 		}
 	}
 
@@ -198,10 +253,10 @@
 	{#if favoriteError}
 		<p class="error">{favoriteError}</p>
 	{/if}
-	{#if data.work.last_read && !isFinished(data.work)}
+	{#if crWork.last_read && !isFinished(crWork)}
 		<p class="continue">
-			<a class="continue-button" href={continueHref(data.work)}>
-				Continue from Chapter {resumeChapter(data.work)}
+			<a class="continue-button" href={continueHref(crWork)}>
+				Continue from Chapter {resumeChapter(crWork)}
 			</a>
 			{#if showRemoveFromCR}
 				<button type="button" class="cr-remove" onclick={handleRemoveFromCR}>
@@ -212,6 +267,21 @@
 	{/if}
 	{#if crRemoveError}
 		<p class="error">{crRemoveError}</p>
+	{/if}
+	{#if isFinished(crWork)}
+		<p class="continue">
+			<button
+				type="button"
+				class="continue-button read-again"
+				onclick={handleReadAgain}
+				disabled={readingAgain}
+			>
+				{readingAgain ? 'Restarting…' : 'Read again'}
+			</button>
+		</p>
+	{/if}
+	{#if readAgainError}
+		<p class="error">{readAgainError}</p>
 	{/if}
 	{#if data.work.summary}
 		<div class="summary">{@html data.work.summary}</div>
@@ -451,6 +521,19 @@
 	}
 	.continue-button:hover {
 		background: var(--reader-accent);
+	}
+	/* "Read again" reuses the Continue CTA's look but is a <button>, so reset
+	   the native button chrome (border/font/cursor) the <a> didn't carry. */
+	.read-again {
+		border: none;
+		font: inherit;
+		font-size: 0.95rem;
+		font-weight: 500;
+		cursor: pointer;
+	}
+	.read-again:disabled {
+		opacity: 0.6;
+		cursor: progress;
 	}
 	.summary {
 		background: var(--reader-card-bg);
