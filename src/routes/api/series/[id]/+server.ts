@@ -21,6 +21,7 @@ type WorkRow = {
 	word_count: number | null;
 	favorited_at: string | null;
 	chapters_updated_at: string | null;
+	position: number | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
 	last_max_read_chapter: number | null;
@@ -43,7 +44,7 @@ export const GET: RequestHandler = ({ params }) => {
 	const rows = db
 		.prepare(
 			`SELECT w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			        w.favorited_at, w.chapters_updated_at,
+			        w.favorited_at, w.chapters_updated_at, sw.position,
 			        rp.last_chapter, rp.last_scroll_y,
 			        rp.max_read_chapter AS last_max_read_chapter,
 			        rp.dismissed_at AS last_dismissed_at,
@@ -66,6 +67,10 @@ export const GET: RequestHandler = ({ params }) => {
 		is_favorite: r.favorited_at !== null,
 		favorited_at: r.favorited_at,
 		chapters_updated_at: r.chapters_updated_at,
+		// "Part N" in the series — the stored AO3 position (can be sparse:
+		// Part 3, Part 7), null for name-only series. Surfaced for the
+		// series-detail page's per-part label.
+		position: r.position,
 		last_read:
 			r.last_chapter !== null && r.last_scroll_y !== null && r.last_updated_at !== null
 				? {

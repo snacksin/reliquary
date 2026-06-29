@@ -7,8 +7,18 @@
 	 * author-detail middle column). Extracted so both share one markup
 	 * source. `showAuthor` keeps the "by {author}" prefix on the meta
 	 * line (library); the author-detail page omits it (redundant there).
+	 *
+	 * `part` adds a "Part N" label inline on the left, adjacent to the cover
+	 * (series-detail page only). Leave it `undefined` (the default) and no
+	 * part column renders at all — so the library/author rows are unchanged.
+	 * `null` reserves the column but renders blank, so covers stay aligned
+	 * down a series whose positions are sparse (some parts unnumbered).
 	 */
-	let { work, showAuthor = false }: { work: Work; showAuthor?: boolean } = $props();
+	let {
+		work,
+		showAuthor = false,
+		part
+	}: { work: Work; showAuthor?: boolean; part?: number | null } = $props();
 
 	const glyph = $derived(work.title?.[0]?.toUpperCase() ?? '?');
 	const chapterLabel = $derived(
@@ -17,6 +27,11 @@
 </script>
 
 <a href="/works/{work.id}" class="library-row">
+	{#if part !== undefined}
+		<span class="part-label"
+			>{#if part !== null}Part {part}{/if}</span
+		>
+	{/if}
 	<div class="cover-slot" aria-hidden="true">
 		<span class="cover-glyph">{glyph}</span>
 	</div>
@@ -42,6 +57,18 @@
 	.library-row-text {
 		flex: 1 1 auto;
 		min-width: 0;
+	}
+	/* "Part N" label (series-detail page). Fixed min-width + right-aligned so
+	   single- and double-digit positions line up and the covers below stay
+	   flush down the list. Theme-aware muted; tabular figures keep the
+	   numbers in a tidy column. */
+	.part-label {
+		flex: 0 0 auto;
+		min-width: 3.75em;
+		text-align: right;
+		color: var(--reader-muted);
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
 	}
 	.library-row:hover strong {
 		text-decoration: underline;
