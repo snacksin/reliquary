@@ -495,6 +495,12 @@ export async function getAuthorTagVocab(fetch: Fetch): Promise<AuthorTagVocabIte
 
 // ─── Series Pages (Part 1) ──────────────────────────────────────────
 
+/** A work as a member of a series — a `Work` plus its "Part N" position. */
+export type SeriesWork = Work & {
+	/** Stored series position ("Part N"); sparse (Part 3, Part 7) or null. */
+	position: number | null;
+};
+
 /** A series detail: its name + the parts you own, in reading order. */
 export type Series = {
 	id: number;
@@ -502,7 +508,7 @@ export type Series = {
 	ao3_series_url: string | null;
 	is_favorite: boolean;
 	favorited_at: string | null;
-	works: Work[];
+	works: SeriesWork[];
 };
 
 /** One series in the /series index (Part 2). */

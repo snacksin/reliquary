@@ -10,6 +10,12 @@
 	const series = $derived(data.series);
 	const count = $derived(series.works.length);
 
+	// Show the "Part N" column only when this series actually carries positions
+	// (AO3 series do; a name-only series may not). When it does, pass each
+	// part's position to every row — null included — so unnumbered parts
+	// reserve a blank slot and the covers stay aligned.
+	const hasParts = $derived(series.works.some((w) => w.position != null));
+
 	// "Read next" (Part 3): the first part you haven't finished, in position
 	// order (the list is already position-sorted). A part counts as finished
 	// once reading_progress reached its last chapter. Null when every part is
@@ -88,7 +94,7 @@
 					{#if work.id === readNextId}
 						<span class="read-next-badge"><span aria-hidden="true">▶</span> Read next</span>
 					{/if}
-					<WorkRow {work} showAuthor />
+					<WorkRow {work} showAuthor part={hasParts ? work.position : undefined} />
 				</li>
 			{/each}
 		</ul>
@@ -172,13 +178,17 @@
 		border-bottom: 1px solid var(--reader-border);
 	}
 	/* "Read next" highlight (Part 3) — a quiet card around the first
-	   unfinished part, with a small badge above the row. */
+	   unfinished part, with a small badge above the row. The card's inner
+	   padding is cancelled by an equal NEGATIVE horizontal margin so the
+	   highlight bleeds outward into the page gutter (.series-page has 1rem of
+	   side padding to absorb it) instead of insetting its content — the Part
+	   label + cover stay flush-aligned with the plain rows above/below. */
 	ul.works li.read-next {
 		border-bottom-color: transparent;
 		background: var(--reader-card-bg);
 		border-radius: 6px;
 		padding: 0.5rem 0.75rem;
-		margin: 0.25rem 0;
+		margin: 0.25rem -0.75rem;
 	}
 	.read-next-badge {
 		display: inline-flex;
