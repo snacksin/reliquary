@@ -6,6 +6,7 @@ import {
 	extractSourceUrl,
 	extractSeriesEntries,
 	detectSource,
+	decodeEntities,
 	parseEpub,
 	type ParsedChapter,
 	type ParsedEpub,
@@ -215,7 +216,18 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// normalized per site. Feeds M2.3's findMatch unchanged, so a FicHub
 	// re-upload now dedups instead of duplicating.
 	const sourceUrl = extractSourceUrl(prefaceChapter?.html ?? '');
+	// content_hash is computed from the RAW extracted title/author (the
+	// historical value), NOT the decoded display strings below — so the dedup
+	// key stays byte-identical to every previously-stored hash and a re-upload
+	// still matches. The decoded title/author are a display concern only.
 	const contentHash = computeContentHash(parseId, parsed.title, parsed.author, parsed.chapters);
+	// Decode HTML entities in the title/author for storage + display (the EPUB
+	// `<dc:title>`/`<dc:creator>` can carry `&amp;`, `&#39;`, etc.). Mirrors how
+	// chapter titles, tags, and series names are already decoded at parse time.
+	// Summary is left raw — it's rendered with `{@html}`, so the browser decodes
+	// its entities, and decoding here would corrupt embedded AO3 markup.
+	const displayTitle = decodeEntities(parsed.title);
+	const displayAuthor = decodeEntities(parsed.author);
 	// Series Pages Part 1: memberships parsed from the preface "Series:" line.
 	// Written to series/series_works inside whichever write transaction fires.
 	const seriesEntries = extractSeriesEntries(prefaceChapter?.html ?? '');
@@ -384,8 +396,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// favorited_at on works) are left untouched.
 				const chaptersGrew = parsed.chapterCount > match.row.chapter_count ? 1 : 0;
 				updateWork.run(
-					parsed.title,
-					parsed.author,
+					displayTitle,
+					displayAuthor,
 					parsed.summary,
 					parsed.chapterCount,
 					contentHash,
@@ -458,7 +470,7 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			throw new IngestError('Failed to write work files', 'write', { cause: e });
 		}
 
-		return { status: 'updated', work_id: finalId, title: parsed.title };
+		return { status: 'updated', work_id: finalId, title: displayTitle };
 	}
 
 	// ── New work. ──
@@ -494,8 +506,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		db.transaction(() => {
 			insertWork.run(
 				work_id,
-				parsed.title,
-				parsed.author,
+				displayTitle,
+				displayAuthor,
 				parsed.summary,
 				parsed.chapterCount,
 				null,
@@ -532,5 +544,5 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		throw new IngestError('Failed to record work', 'db', { cause: e });
 	}
 
-	return { status: 'created', work_id, title: parsed.title };
+	return { status: 'created', work_id, title: displayTitle };
 }
