@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
-	import { setFavorite, unsetFavorite, trashWork, restoreWork, daysUntilPurge } from '$lib/api';
+	import {
+		setFavorite,
+		unsetFavorite,
+		trashWork,
+		restoreWork,
+		removeProgress,
+		daysUntilPurge
+	} from '$lib/api';
+	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
 	import { Heart } from 'lucide-svelte';
 	import type { PageProps } from './$types';
@@ -44,6 +52,27 @@
 	// Cover-slot placeholder glyph: first letter of the title, uppercased.
 	// Mirrors the helper on the library page; v1.5 swaps in real cover art.
 	const glyph = $derived(data.work.title?.[0]?.toUpperCase() ?? '?');
+
+	// ─── Remove from Continue Reading (sticky dismiss) ───────────────
+	// Same endpoint as the carousel × (DELETE /progress → sets dismissed_at);
+	// the work leaves Continue Reading but its read state is preserved, and a
+	// later read brings it back. `crRemoved` is an optimistic local override so
+	// the button hides instantly before invalidateAll re-fetches the dismissal.
+	let crRemoved = $state(false);
+	let crRemoveError: string | null = $state(null);
+	const showRemoveFromCR = $derived(inContinueReading(data.work) && !crRemoved);
+
+	async function handleRemoveFromCR() {
+		crRemoved = true;
+		crRemoveError = null;
+		try {
+			await removeProgress(data.work.id, fetch);
+			await invalidateAll();
+		} catch (e) {
+			crRemoved = false; // revert
+			crRemoveError = e instanceof Error ? e.message : 'Could not remove from Continue Reading';
+		}
+	}
 
 	// ─── Move to Trash (M2.3 Step 4) ────────────────────────────────
 	// Confirm via a native <dialog> (the M2.1.6 idiom: Cancel default-
@@ -169,15 +198,20 @@
 	{#if favoriteError}
 		<p class="error">{favoriteError}</p>
 	{/if}
-	{#if data.work.last_read}
+	{#if data.work.last_read && !isFinished(data.work)}
 		<p class="continue">
-			<a
-				class="continue-button"
-				href="/works/{data.work.id}/ch/{data.work.last_read.chapter}?continue=1"
-			>
-				Continue from Chapter {data.work.last_read.chapter}
+			<a class="continue-button" href={continueHref(data.work)}>
+				Continue from Chapter {resumeChapter(data.work)}
 			</a>
+			{#if showRemoveFromCR}
+				<button type="button" class="cr-remove" onclick={handleRemoveFromCR}>
+					Remove from Continue Reading
+				</button>
+			{/if}
 		</p>
+	{/if}
+	{#if crRemoveError}
+		<p class="error">{crRemoveError}</p>
 	{/if}
 	{#if data.work.summary}
 		<div class="summary">{@html data.work.summary}</div>
@@ -378,6 +412,28 @@
 	}
 	.continue {
 		margin: 1rem 0 0;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+	/* Secondary, low-emphasis action next to the Continue CTA — a plain
+	   theme-aware text button so it reads as a quiet "stop surfacing this"
+	   rather than competing with the primary Continue button. Mirrors the
+	   carousel × semantics (sticky dismiss). */
+	.cr-remove {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		font-size: 0.85rem;
+		color: var(--reader-muted);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	.cr-remove:hover,
+	.cr-remove:focus-visible {
+		color: var(--reader-heart);
 	}
 	/* Inverted theme colors — `--reader-fg` for the bg + `--reader-bg`
 	   for the text gives a high-contrast button regardless of which

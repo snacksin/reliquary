@@ -348,10 +348,16 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 
 		const archiveByChapterId = new Map(archives.map((a) => [a.chapterId, a]));
 
+		// `chapters_updated_at` is bumped only when this update GREW the
+		// chapter_count — that's the signal the Continue Reading carousel uses
+		// to bump a resurfaced (newly-grown) work up to its new-chapter time.
+		// The CASE keeps any prior stamp when chapters didn't grow, rather than
+		// nulling it out. (`chaptersGrew` is computed at the run site.)
 		const updateWork = db.prepare(
 			`UPDATE works
 			   SET title = ?, author = ?, summary = ?, chapter_count = ?,
-			       content_hash = ?, source = ?, trashed_at = NULL
+			       content_hash = ?, source = ?, trashed_at = NULL,
+			       chapters_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE chapters_updated_at END
 			 WHERE id = ?`
 		);
 		const updateChapter = db.prepare(
@@ -376,6 +382,7 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// trashed_at = NULL here also performs the restore-then-apply
 				// for a matched-in-trash WIP update. FK rows (reading_progress,
 				// favorited_at on works) are left untouched.
+				const chaptersGrew = parsed.chapterCount > match.row.chapter_count ? 1 : 0;
 				updateWork.run(
 					parsed.title,
 					parsed.author,
@@ -383,6 +390,7 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 					parsed.chapterCount,
 					contentHash,
 					source,
+					chaptersGrew,
 					finalId
 				);
 

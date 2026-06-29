@@ -9,8 +9,10 @@ export const GET: RequestHandler = ({ params }) => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			   w.favorited_at, w.trashed_at,
+			   w.favorited_at, w.trashed_at, w.chapters_updated_at,
 			   rp.last_chapter, rp.last_scroll_y,
+			   rp.max_read_chapter AS last_max_read_chapter,
+			   rp.dismissed_at AS last_dismissed_at,
 			   rp.updated_at AS last_updated_at
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
@@ -26,8 +28,11 @@ export const GET: RequestHandler = ({ params }) => {
 				word_count: number | null;
 				favorited_at: string | null;
 				trashed_at: string | null;
+				chapters_updated_at: string | null;
 				last_chapter: number | null;
 				last_scroll_y: number | null;
+				last_max_read_chapter: number | null;
+				last_dismissed_at: string | null;
 				last_updated_at: string | null;
 		  }
 		| undefined;
@@ -59,12 +64,15 @@ export const GET: RequestHandler = ({ params }) => {
 		is_favorite: row.favorited_at !== null,
 		favorited_at: row.favorited_at,
 		trashed_at: row.trashed_at,
+		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:
 			row.last_chapter !== null && row.last_scroll_y !== null && row.last_updated_at !== null
 				? {
 						chapter: row.last_chapter,
 						scroll_y: row.last_scroll_y,
+						max_read_chapter: row.last_max_read_chapter,
+						dismissed_at: row.last_dismissed_at,
 						updated_at: row.last_updated_at
 					}
 				: null

@@ -3,7 +3,8 @@ import { error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 
 /**
- * Upsert this work's reading_progress row. Body: { chapter, scroll_y }.
+ * Upsert this work's reading_progress row. Body: { chapter, scroll_y,
+ * completed? }.
  *
  * - Validates the work exists (404 otherwise) so we don't silently
  *   drop progress writes that point at nothing.
@@ -14,10 +15,17 @@ import { getDb } from '$lib/server/db';
  *   truth for restore-on-reload (see M1.md gotchas + Step 9 logic);
  *   this row is for the library's "Continue Reading" surfacing and
  *   future cross-device hand-off.
+ * - `completed` (the reader's ~95%-scroll auto-mark) raises the
+ *   `max_read_chapter` high-water mark, which is what makes a work
+ *   "finished" (max_read_chapter >= chapter_count) and lets it
+ *   resurface for free when new chapters arrive. The mark is monotonic
+ *   (MAX with the existing value) so scrolling back up never lowers it.
+ * - Any write clears `dismissed_at`: reading a work again undoes a
+ *   sticky Continue-Reading dismissal so it can return to the carousel.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const body = (await request.json().catch(() => null)) as
-		| { chapter?: unknown; scroll_y?: unknown }
+		| { chapter?: unknown; scroll_y?: unknown; completed?: unknown }
 		| null;
 
 	if (
@@ -33,6 +41,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (!Number.isFinite(body.scroll_y) || body.scroll_y < 0) {
 		throw error(400, 'invalid scroll_y');
 	}
+	if (body.completed !== undefined && typeof body.completed !== 'boolean') {
+		throw error(400, 'invalid completed');
+	}
 
 	const db = getDb();
 	const exists = db.prepare('SELECT 1 FROM works WHERE id = ?').get(params.id);
@@ -40,25 +51,40 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		throw error(404, 'work not found');
 	}
 
+	// `completedChapter` carries the chapter number into the MAX() only when
+	// the reader reports this chapter read-to-end; otherwise 0, a no-op for
+	// the monotonic high-water mark.
+	const completedChapter = body.completed ? body.chapter : 0;
+
 	db.prepare(
-		`INSERT INTO reading_progress (work_id, last_chapter, last_scroll_y, updated_at)
-		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		`INSERT INTO reading_progress
+		   (work_id, last_chapter, last_scroll_y, max_read_chapter, dismissed_at, updated_at)
+		 VALUES (?, ?, ?, NULLIF(?, 0), NULL, CURRENT_TIMESTAMP)
 		 ON CONFLICT(work_id) DO UPDATE SET
 		   last_chapter = excluded.last_chapter,
 		   last_scroll_y = excluded.last_scroll_y,
+		   max_read_chapter = MAX(COALESCE(max_read_chapter, 0), ?),
+		   dismissed_at = NULL,
 		   updated_at = CURRENT_TIMESTAMP`
-	).run(params.id, body.chapter, Math.round(body.scroll_y));
+	).run(params.id, body.chapter, Math.round(body.scroll_y), completedChapter, completedChapter);
 
 	return new Response(null, { status: 204 });
 };
 
 /**
- * Remove this work's reading_progress row. Idempotent — DELETE on a
- * missing row is a no-op and returns 204; we don't even check whether
- * the work exists, since revealing existence would be unnecessary
- * (and the on-disk effect is the same either way: no row).
+ * The Continue Reading × — a STICKY dismiss, not a delete. Sets
+ * `dismissed_at` so the work leaves the carousel and stays out even when
+ * new chapters arrive (a finished work resurfaces; a dismissed one does
+ * not). The reading_progress row is preserved, so the work stays "marked
+ * read" in the library and a later read (POST, which clears `dismissed_at`)
+ * brings it back to Continue Reading normally.
+ *
+ * Idempotent — a no-op on a missing row, returns 204 either way; we don't
+ * reveal whether the work exists.
  */
 export const DELETE: RequestHandler = ({ params }) => {
-	getDb().prepare('DELETE FROM reading_progress WHERE work_id = ?').run(params.id);
+	getDb()
+		.prepare(`UPDATE reading_progress SET dismissed_at = CURRENT_TIMESTAMP WHERE work_id = ?`)
+		.run(params.id);
 	return new Response(null, { status: 204 });
 };

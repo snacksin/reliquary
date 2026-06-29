@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page as pageState } from '$app/state';
 	import { uploadEpub, removeProgress, type Work } from '$lib/api';
+	import { inContinueReading, maxRead, resumeChapter, continueHref, crSortKey } from '$lib/reading';
 	import BulkUploadButton from '$lib/BulkUploadButton.svelte';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
@@ -22,18 +23,16 @@
 	// chapters" — with an optional link to the affected work.
 	let uploadNotice: { text: string; href?: string } | null = $state(null);
 
-	// Continue Reading: most-recently-read first. /api/works orders by
-	// upload date (ingested_at DESC), which would surface freshly
-	// uploaded fics regardless of when their reading happened — wrong
-	// for a "Continue Reading" list. Re-sort the read subset by
-	// last_read.updated_at DESC, symmetric to how Favorites sorts by
-	// favorited_at DESC.
+	// Continue Reading three-state model (shared helpers in $lib/reading so the
+	// detail page agrees): in-progress → shown (resume where you left off);
+	// finished → hidden (max_read_chapter >= real chapter_count; resurfaces for
+	// free when chapter_count grows); dismissed → hidden (sticky × until a
+	// future read clears it). Sorted by the later of reading-recency and
+	// new-chapter time so a resurfaced work bumps up.
 	const continueReading = $derived(
 		data.works
-			.filter((w) => w.last_read)
-			.toSorted((a, b) =>
-				(b.last_read?.updated_at ?? '').localeCompare(a.last_read?.updated_at ?? '')
-			)
+			.filter(inContinueReading)
+			.toSorted((a, b) => crSortKey(b).localeCompare(crSortKey(a)))
 	);
 	// Favorites list: most-recently-favorited first.
 	const favorites = $derived(
@@ -42,9 +41,13 @@
 			.toSorted((a, b) => (b.favorited_at ?? '').localeCompare(a.favorited_at ?? ''))
 	);
 
+	// Percent = real chapters read to the END (the high-water mark), NOT the
+	// resume target — so a work that's still in Continue Reading never shows
+	// 100% (it would be finished and removed). E.g. after finishing ch 1 of 2
+	// you resume at "Ch 2" but you're "50%", not 100%.
 	function progressPercent(w: Work): number {
 		if (!w.last_read || w.chapter_count <= 0) return 0;
-		return Math.min(100, Math.round((w.last_read.chapter / w.chapter_count) * 100));
+		return Math.min(100, Math.round((maxRead(w) / w.chapter_count) * 100));
 	}
 
 	// Cover-slot placeholder glyph: first letter of the title, uppercased.
@@ -62,16 +65,7 @@
 	function progressLabel(w: Work): string {
 		if (!w.last_read) return '';
 		if (w.chapter_count === 1) return 'In progress';
-		return `Ch ${w.last_read.chapter} · ${progressPercent(w)}%`;
-	}
-
-	/**
-	 * Continue Reading entry click: always resume — the section only
-	 * exists for works with `last_read`, and the user clicked it
-	 * *because* they want to pick up where they left off.
-	 */
-	function continueHref(w: Work): string {
-		return `/works/${w.id}/ch/${w.last_read!.chapter}?continue=1`;
+		return `Ch ${resumeChapter(w)} · ${progressPercent(w)}%`;
 	}
 
 	async function handleFileChange(e: Event) {

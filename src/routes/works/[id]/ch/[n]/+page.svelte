@@ -31,25 +31,35 @@
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let suppress = false;
 
-	function onScroll() {
-		if (suppress) return;
-		const k = key;
-		const y = window.scrollY;
+	// Record this chapter's progress + read-to-end mark.
+	//
+	// `completed` = scrolled to within ~5% of the page bottom. Computed
+	// client-side because only the browser knows the rendered chapter height.
+	// Crucially this is ALSO evaluated on arrival (see afterNavigate): for a
+	// chapter short enough to fit on screen, the bottom is already visible at
+	// the top, so it's marked read on open — the only completion signal we get
+	// for a chapter that never scrolls. Without this, a short final chapter
+	// (e.g. a 2-chapter fic with a brief Ch 2) never auto-finishes.
+	//
+	// localStorage stays the source of truth for restore-on-reload (Step 9
+	// invariant); the server POST is purely additive — it drives the library's
+	// "Continue Reading" surfacing.
+	function recordProgress() {
 		const id = page.params.id;
 		const ch = Number(page.params.n);
+		if (!(Number.isInteger(ch) && ch >= 1 && id)) return;
+		const y = window.scrollY;
+		const completed = y + window.innerHeight >= document.documentElement.scrollHeight * 0.95;
+		localStorage.setItem(key, String(y));
+		saveProgress(id, ch, y, completed, fetch).catch(() => {
+			// best-effort: don't bother the user about transient network failures
+		});
+	}
+
+	function onScroll() {
+		if (suppress) return;
 		clearTimeout(timer);
-		timer = setTimeout(() => {
-			// localStorage stays the source of truth for restore-on-reload
-			// (Step 9 invariant). The server POST is purely additive — it
-			// drives the library's "Continue Reading" surfacing.
-			localStorage.setItem(k, String(y));
-			if (Number.isInteger(ch) && ch >= 1 && id) {
-				saveProgress(id, ch, y, fetch).catch(() => {
-					// best-effort: don't bother the user about transient
-					// network failures here
-				});
-			}
-		}, 500);
+		timer = setTimeout(recordProgress, 500);
 	}
 
 	afterNavigate((nav) => {
@@ -77,9 +87,13 @@
 		}
 
 		// Re-enable the listener once scroll events from the programmatic
-		// scrollTo have settled.
+		// scrollTo have settled, then record progress for the chapter we landed
+		// on — even if the user never scrolls it (a short chapter that fits on
+		// screen is "read to end" the moment it's shown). Runs on the initial
+		// load too (afterNavigate fires on type === 'enter').
 		setTimeout(() => {
 			suppress = false;
+			recordProgress();
 		}, 100);
 	});
 
