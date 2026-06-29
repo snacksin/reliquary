@@ -66,6 +66,14 @@ export type Work = {
 	 * badge/filter that would carry it into the listing endpoints is deferred.
 	 */
 	read_at?: string | null;
+	/**
+	 * Personal star rating (you-layer): 1–5 when rated, null/absent = unrated.
+	 * Its own dimension — decoupled from progress / Continue Reading / read /
+	 * favorite. Projected onto BOTH the library-list and work-detail feeds
+	 * (drives the library-row star display + the detail star control). Set
+	 * only via POST/DELETE /api/works/[id]/rating.
+	 */
+	rating?: number | null;
 };
 
 type Fetch = typeof fetch;
@@ -302,6 +310,26 @@ export async function markRead(workId: string, fetch: Fetch): Promise<void> {
 
 export async function markUnread(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/read`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Personal star rating — mirrors the favorite/read wrappers. `setRating`
+ * upserts 1–5 stars; `clearRating` removes the rating (back to unrated). The
+ * only client path that writes the rating; decoupled from progress / CR /
+ * read / favorite.
+ */
+export async function setRating(workId: string, stars: number, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/rating`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ stars })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function clearRating(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/rating`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(await extractError(res));
 }
 

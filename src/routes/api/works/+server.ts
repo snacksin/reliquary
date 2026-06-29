@@ -16,6 +16,7 @@ type Row = {
 	last_max_read_chapter: number | null;
 	last_dismissed_at: string | null;
 	last_updated_at: string | null;
+	rating: number | null;
 };
 
 /**
@@ -121,6 +122,10 @@ function rowToWork(r: Row) {
 		word_count: r.word_count,
 		is_favorite: r.favorited_at !== null,
 		favorited_at: r.favorited_at,
+		// Personal star rating (you-layer): 1–5 when rated, null = unrated.
+		// Drives the library-row star display; the deferred sort/filter
+		// fast-follow reads the same projected value.
+		rating: r.rating,
 		// When this work last GREW its chapter count (update-in-place). The
 		// Continue Reading carousel sorts a resurfaced work by the later of
 		// this and its reading recency, so fresh chapters bump it up.
@@ -155,7 +160,8 @@ const SELECT_COLUMNS = `
   rp.last_chapter, rp.last_scroll_y,
   rp.max_read_chapter AS last_max_read_chapter,
   rp.dismissed_at AS last_dismissed_at,
-  rp.updated_at AS last_updated_at
+  rp.updated_at AS last_updated_at,
+  rt.stars AS rating
 `;
 
 /**
@@ -290,6 +296,7 @@ export const GET: RequestHandler = ({ url }) => {
 	const baseSql = `
 		FROM works w
 		LEFT JOIN reading_progress rp ON rp.work_id = w.id
+		LEFT JOIN ratings rt ON rt.work_id = w.id
 		${whereClause}
 	`;
 	const baseParams = whereParams;

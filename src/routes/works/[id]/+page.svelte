@@ -9,12 +9,14 @@
 		readAgain,
 		markRead,
 		markUnread,
+		setRating,
+		clearRating,
 		daysUntilPurge,
 		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
-	import { Heart } from 'lucide-svelte';
+	import { Heart, Star } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -233,6 +235,40 @@
 			readError = e instanceof Error ? e.message : 'Could not update read status';
 		}
 	}
+
+	// ─── Personal star rating (you-layer) ────────────────────────────
+	// Its own dimension — no interaction with reading progress, Continue
+	// Reading, the read flag, or favorites. Optimistic local override
+	// (`pendingRating`) mirroring the favorite heart; revert-on-failure; NO
+	// invalidateAll (decoupled → nothing to re-fetch, and skipping it avoids
+	// the nav flash, per #65/#48). `pendingRating`: null = no override, 0 =
+	// optimistically cleared, 1–5 = optimistically set. `hoverRating` previews
+	// the fill under the cursor. Effective rating falls back to the server
+	// value, then 0 (unrated).
+	let pendingRating: number | null = $state(null);
+	let hoverRating = $state(0);
+	let ratingError: string | null = $state(null);
+	const rating = $derived(pendingRating ?? data.work.rating ?? 0);
+	const ratingDisplay = $derived(hoverRating || rating);
+
+	async function setStars(n: number) {
+		// Click a star to set it; click your current rating to clear (→ 0).
+		const next = n === rating ? 0 : n;
+		const prev = pendingRating;
+		pendingRating = next; // optimistic
+		ratingError = null;
+		try {
+			if (next === 0) {
+				await clearRating(data.work.id, fetch);
+			} else {
+				await setRating(data.work.id, next, fetch);
+			}
+			// success: keep the override (no invalidateAll → data.work is stale).
+		} catch (e) {
+			pendingRating = prev; // revert the optimistic change
+			ratingError = e instanceof Error ? e.message : 'Could not update rating';
+		}
+	}
 </script>
 
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
@@ -288,6 +324,36 @@
 			<p class="author">
 				by <a href="/authors/{encodeURIComponent(data.work.author)}">{data.work.author}</a>
 			</p>
+			<div
+				class="rating-control"
+				role="group"
+				aria-label="Your rating"
+				onmouseleave={() => (hoverRating = 0)}
+			>
+				<span class="rating-label">Your rating</span>
+				{#each [1, 2, 3, 4, 5] as n (n)}
+					<button
+						type="button"
+						class="star-button"
+						onclick={() => setStars(n)}
+						onmouseenter={() => (hoverRating = n)}
+						onfocus={() => (hoverRating = n)}
+						onblur={() => (hoverRating = 0)}
+						aria-pressed={n <= rating}
+						aria-label={n === rating
+							? `${n} star${n === 1 ? '' : 's'} — your current rating; activate to clear`
+							: `Rate ${n} star${n === 1 ? '' : 's'}`}
+						title="Click a star to rate; click your current rating to clear"
+					>
+						<Star
+							size={22}
+							color={n <= ratingDisplay ? 'var(--reader-accent)' : 'var(--reader-muted)'}
+							fill={n <= ratingDisplay ? 'var(--reader-accent)' : 'none'}
+							aria-hidden="true"
+						/>
+					</button>
+				{/each}
+			</div>
 			{#key data.work.id}
 				<SeriesAssign workId={data.work.id} links={data.series} allSeries={data.allSeries} />
 			{/key}
@@ -298,6 +364,9 @@
 	{/if}
 	{#if readError}
 		<p class="error">{readError}</p>
+	{/if}
+	{#if ratingError}
+		<p class="error">{ratingError}</p>
 	{/if}
 	{#if crWork.last_read && !isFinished(crWork)}
 		<p class="continue">
@@ -549,6 +618,32 @@
 	}
 	.author a:hover {
 		text-decoration: underline;
+	}
+	/* Personal star rating control — a labeled row of five clickable stars
+	   under the author line. Stars are borderless icon buttons (chrome reset);
+	   fill/outline + accent/muted color are driven per-icon in the markup, so
+	   hover-preview + set state read clearly across all three themes. */
+	.rating-control {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		margin: 0.5rem 0 0.25rem;
+	}
+	.rating-label {
+		font-size: 0.8rem;
+		color: var(--reader-muted);
+		margin-right: 0.4rem;
+	}
+	.star-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1px;
+		border: none;
+		background: none;
+		color: inherit;
+		cursor: pointer;
+		line-height: 0;
 	}
 	.error {
 		color: #b00;
