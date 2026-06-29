@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Heart } from 'lucide-svelte';
+	import { Heart, Star } from 'lucide-svelte';
 	import type { Work } from '$lib/api';
 
 	/**
@@ -43,6 +43,18 @@
 			{/if}
 		</strong>
 		<span class="meta">{showAuthor ? `by ${work.author} · ` : ''}{chapterLabel}</span>
+		{#if work.rating}
+			<span class="row-rating" aria-label="Your rating: {work.rating} of 5 stars">
+				{#each [1, 2, 3, 4, 5] as n (n)}
+					<Star
+						size={13}
+						color={n <= work.rating ? 'var(--reader-accent)' : 'var(--reader-muted)'}
+						fill={n <= work.rating ? 'var(--reader-accent)' : 'none'}
+						aria-hidden="true"
+					/>
+				{/each}
+			</span>
+		{/if}
 	</div>
 </a>
 
@@ -78,6 +90,15 @@
 		color: var(--reader-muted);
 		font-size: 0.9rem;
 		margin-top: 0.15rem;
+	}
+	/* Read-only star rating on a library row (you-layer). Only rendered when
+	   the work is rated, so unrated rows stay clean. Stars inherit the theme
+	   via the per-icon color/fill props above. */
+	.row-rating {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+		margin-top: 0.25rem;
 	}
 	.cover-slot {
 		flex: 0 0 140px;
