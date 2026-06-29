@@ -7,6 +7,8 @@
 		restoreWork,
 		removeProgress,
 		readAgain,
+		markRead,
+		markUnread,
 		daysUntilPurge,
 		type LastRead
 	} from '$lib/api';
@@ -199,6 +201,38 @@
 			pendingFavorite = null;
 		}
 	}
+
+	// ─── Manual "read" mark (you-layer foundation) ───────────────────
+	// A purely user-toggled flag (works.read_at), set ONLY via POST/DELETE
+	// /api/works/[id]/read. It is FULLY DECOUPLED from reading progress: it does
+	// not read or write reading_progress, Continue Reading inclusion, the
+	// re-read flow, or any percent/finish logic. Mirrors the favorite heart:
+	// optimistic local override (`pendingRead`) with revert-on-failure. Unlike
+	// toggleFavorite there's no invalidateAll() — the mark is decoupled, so
+	// nothing else needs re-fetching, and skipping it avoids the nav re-render
+	// flash (cf. the PR #65 / #48 favorite-flash fix). The override holds the
+	// new state until the next navigation/reload re-reads data.work.read_at.
+	let pendingRead: boolean | null = $state(null);
+	const isRead = $derived(pendingRead ?? data.work.read_at != null);
+	let readError: string | null = $state(null);
+
+	async function toggleRead() {
+		const next = !isRead;
+		pendingRead = next; // optimistic
+		readError = null;
+		try {
+			if (next) {
+				await markRead(data.work.id, fetch);
+			} else {
+				await markUnread(data.work.id, fetch);
+			}
+			// success: keep the override (no invalidateAll → data.work is stale;
+			// the override is the new truth until the next load).
+		} catch (e) {
+			pendingRead = null; // revert to server truth (unchanged)
+			readError = e instanceof Error ? e.message : 'Could not update read status';
+		}
+	}
 </script>
 
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
@@ -233,6 +267,15 @@
 					</a>
 				{/if}
 				<button
+					type="button"
+					class="read-toggle"
+					class:is-read={isRead}
+					onclick={toggleRead}
+					aria-pressed={isRead}
+				>
+					{isRead ? 'Mark as unread' : 'Mark as read'}
+				</button>
+				<button
 					class="heart"
 					class:filled={isFavorite}
 					onclick={toggleFavorite}
@@ -252,6 +295,9 @@
 	</div>
 	{#if favoriteError}
 		<p class="error">{favoriteError}</p>
+	{/if}
+	{#if readError}
+		<p class="error">{readError}</p>
 	{/if}
 	{#if crWork.last_read && !isFinished(crWork)}
 		<p class="continue">
@@ -423,6 +469,35 @@
 	}
 	.history-button:hover {
 		border-color: var(--reader-accent);
+	}
+	/* "Mark as read / unread" toggle — a text chip mirroring the History
+	   button's chrome and the heart's height, sitting in the same action
+	   cluster. The label is the action to take; the marked-read state is shown
+	   by an accent border + accent text (the same "accent when active" idea as
+	   the filled heart), legible on card-bg across all three themes. */
+	.read-toggle {
+		flex: 0 0 auto;
+		height: 38px;
+		box-sizing: border-box;
+		display: inline-flex;
+		align-items: center;
+		padding: 0 0.7rem;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-card-bg);
+		color: var(--reader-fg);
+		font: inherit;
+		font-size: 0.85rem;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.read-toggle:hover {
+		border-color: var(--reader-accent);
+	}
+	.read-toggle.is-read {
+		border-color: var(--reader-accent);
+		color: var(--reader-accent);
+		font-weight: 600;
 	}
 	h1 {
 		font-size: 1.6rem;
