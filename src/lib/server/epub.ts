@@ -255,7 +255,7 @@ const HEADING_TO_CATEGORY: Record<string, TagCategory> = {
  * names are otherwise stored verbatim — Unicode characters (curly quotes,
  * emoji, kanji) are already correctly UTF-8 in the source XHTML.
  */
-function decodeEntities(s: string): string {
+export function decodeEntities(s: string): string {
 	return s
 		.replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)))
 		.replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCodePoint(parseInt(h, 16)))

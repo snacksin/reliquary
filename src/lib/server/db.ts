@@ -5,6 +5,7 @@ import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
 import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
+import { backfillDecodeText } from './textdecode';
 
 let cached: Database.Database | undefined;
 
@@ -87,6 +88,15 @@ export function getDb(): Database.Database {
 		backfillSourceUrl(db);
 	} catch (e) {
 		console.error('[source-url-backfill] failed', e);
+	}
+
+	// Decode HTML entities in already-stored works.title/author (+ re-key the
+	// author-keyed tables) so the existing library matches the at-ingest
+	// decoding. Idempotent + cheap; guarded so it can never block boot.
+	try {
+		backfillDecodeText(db);
+	} catch (e) {
+		console.error('[text-decode] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more
