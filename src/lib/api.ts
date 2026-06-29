@@ -57,6 +57,15 @@ export type Work = {
 	 * listing endpoints, so it's effectively always null elsewhere.
 	 */
 	trashed_at?: string | null;
+	/**
+	 * Manual "read" mark (you-layer foundation): non-null = the user marked
+	 * this work read at that timestamp; null/absent = unread. Set ONLY via
+	 * POST/DELETE /api/works/[id]/read — fully decoupled from reading
+	 * progress / Continue Reading (see migrations/0018_read_at.sql). Only
+	 * present on the work-detail response this round; the library
+	 * badge/filter that would carry it into the listing endpoints is deferred.
+	 */
+	read_at?: string | null;
 };
 
 type Fetch = typeof fetch;
@@ -278,6 +287,21 @@ export async function setFavorite(workId: string, fetch: Fetch): Promise<void> {
 
 export async function unsetFavorite(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/favorite`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Manual "read" mark toggle — mirrors the favorite wrappers. `markRead` sets
+ * works.read_at; `markUnread` clears it. The only client path that touches the
+ * read mark; fully decoupled from reading progress / Continue Reading.
+ */
+export async function markRead(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/read`, { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+export async function markUnread(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/read`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(await extractError(res));
 }
 

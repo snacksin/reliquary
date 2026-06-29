@@ -9,7 +9,7 @@ export const GET: RequestHandler = ({ params }) => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			   w.favorited_at, w.trashed_at, w.chapters_updated_at,
+			   w.favorited_at, w.trashed_at, w.read_at, w.chapters_updated_at,
 			   rp.last_chapter, rp.last_scroll_y,
 			   rp.max_read_chapter AS last_max_read_chapter,
 			   rp.dismissed_at AS last_dismissed_at,
@@ -28,6 +28,7 @@ export const GET: RequestHandler = ({ params }) => {
 				word_count: number | null;
 				favorited_at: string | null;
 				trashed_at: string | null;
+				read_at: string | null;
 				chapters_updated_at: string | null;
 				last_chapter: number | null;
 				last_scroll_y: number | null;
@@ -64,6 +65,7 @@ export const GET: RequestHandler = ({ params }) => {
 		is_favorite: row.favorited_at !== null,
 		favorited_at: row.favorited_at,
 		trashed_at: row.trashed_at,
+		read_at: row.read_at,
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:
