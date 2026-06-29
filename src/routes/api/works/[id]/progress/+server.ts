@@ -72,6 +72,47 @@ export const POST: RequestHandler = async ({ params, request }) => {
 };
 
 /**
+ * "Read again" — reset this work's RESUMABLE reading progress to a fresh
+ * start so a finished fic restarts as a new read. Sets the row to
+ * last_chapter = 1, last_scroll_y = 0, max_read_chapter = 0 and clears
+ * dismissed_at, with a fresh updated_at. After this the work is plain
+ * "in-progress" (max_read_chapter 0 < chapter_count), so all the existing
+ * Continue Reading logic takes over unchanged: it re-enters the carousel at
+ * Chapter 1, tracks the whole re-read (last chapter included), and leaves
+ * again when finished. The updated_at bump sorts it to the top of CR.
+ *
+ * Idempotent upsert (a finished work always has a row, but INSERT-on-conflict
+ * keeps it safe either way). 404 if the work doesn't exist, mirroring POST.
+ *
+ * Scope: this touches ONLY reading_progress columns — it does NOT write the
+ * `works` table, so the decoupled "read" mark (works.read_at, you-layer) is
+ * never cleared. Re-reading a fic must never un-mark it as read; that read
+ * state is owned elsewhere and is intentionally independent of resumable
+ * progress.
+ */
+export const PUT: RequestHandler = ({ params }) => {
+	const db = getDb();
+	const exists = db.prepare('SELECT 1 FROM works WHERE id = ?').get(params.id);
+	if (!exists) {
+		throw error(404, 'work not found');
+	}
+
+	db.prepare(
+		`INSERT INTO reading_progress
+		   (work_id, last_chapter, last_scroll_y, max_read_chapter, dismissed_at, updated_at)
+		 VALUES (?, 1, 0, 0, NULL, CURRENT_TIMESTAMP)
+		 ON CONFLICT(work_id) DO UPDATE SET
+		   last_chapter = 1,
+		   last_scroll_y = 0,
+		   max_read_chapter = 0,
+		   dismissed_at = NULL,
+		   updated_at = CURRENT_TIMESTAMP`
+	).run(params.id);
+
+	return new Response(null, { status: 204 });
+};
+
+/**
  * The Continue Reading × — a STICKY dismiss, not a delete. Sets
  * `dismissed_at` so the work leaves the carousel and stays out even when
  * new chapters arrive (a finished work resurfaces; a dismissed one does
