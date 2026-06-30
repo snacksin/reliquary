@@ -74,6 +74,12 @@ export type Work = {
 	 * only via POST/DELETE /api/works/[id]/rating.
 	 */
 	rating?: number | null;
+	/**
+	 * Per-work markdown note (you-layer): the raw markdown body, or null/absent
+	 * when there's no note. Rendered + sanitized on the client. Only present on
+	 * the work-detail response. Set only via PUT /api/works/[id]/note.
+	 */
+	note?: string | null;
 };
 
 type Fetch = typeof fetch;
@@ -342,6 +348,20 @@ export async function setRating(workId: string, stars: number, fetch: Fetch): Pr
 
 export async function clearRating(workId: string, fetch: Fetch): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/rating`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Save a work's markdown note (you-layer). Explicit Save, doubling as clear: an
+ * empty body removes the note server-side. The only client path that writes a
+ * note; decoupled from progress / ratings / read / favorites.
+ */
+export async function saveNote(workId: string, body: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/note`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ body })
+	});
 	if (!res.ok) throw new Error(await extractError(res));
 }
 

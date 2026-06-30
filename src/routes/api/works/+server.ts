@@ -284,12 +284,18 @@ const TAG_FILTER_CLAUSE = `w.id IN (
 )`;
 
 /**
- * SQL fragment for the search filter. FTS5 MATCH against the
- * works_fts virtual table; rejoined to works on id. Bound parameter
- * is the sanitized query expression (already includes `*` prefix
- * markers and implicit AND between terms).
+ * SQL fragment for the search filter. FTS5 MATCH against the works_fts
+ * (title/author/summary) AND notes_fts (note body) virtual tables, UNION-ed by
+ * work_id and rejoined to works on id — so a query matches a fic's metadata OR
+ * its note (you-layer Step 2). The two FTS tables stay separate (works_fts is
+ * untouched); the sanitized query expression (with `*` prefix markers + implicit
+ * AND) is bound once per MATCH.
  */
-const SEARCH_CLAUSE = `w.id IN (SELECT work_id FROM works_fts WHERE works_fts MATCH ?)`;
+const SEARCH_CLAUSE = `w.id IN (
+  SELECT work_id FROM works_fts WHERE works_fts MATCH ?
+  UNION
+  SELECT work_id FROM notes_fts WHERE notes_fts MATCH ?
+)`;
 
 export const GET: RequestHandler = ({ url }) => {
 	const db = getDb();
@@ -333,7 +339,8 @@ export const GET: RequestHandler = ({ url }) => {
 
 	if (ftsQuery) {
 		whereParts.push(SEARCH_CLAUSE);
-		whereParams.push(ftsQuery);
+		// Bound twice — once per MATCH in the works_fts ∪ notes_fts clause.
+		whereParams.push(ftsQuery, ftsQuery);
 	}
 
 	// You-layer rating/favorites filters — plain WHERE entries on aliases
