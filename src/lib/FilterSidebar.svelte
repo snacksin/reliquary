@@ -7,8 +7,31 @@
 		tags: TagGroups;
 		selectedIds: number[];
 		matchAllCategories: TagCategory[];
+		/** You-layer Step 1b: minimum star-rating threshold (1–5), or null. */
+		minStars?: number | null;
+		/** You-layer Step 1b: favorites-only filter. */
+		favOnly?: boolean;
+		/**
+		 * Render the you-layer favorites + star-rating filter sections. Set by
+		 * the library only — the author-detail page reuses this sidebar for AO3
+		 * tag filtering and doesn't wire the personal filters, so it leaves this
+		 * false (and the props default).
+		 */
+		personalFilters?: boolean;
 	};
-	let { tags, selectedIds, matchAllCategories }: Props = $props();
+	let {
+		tags,
+		selectedIds,
+		matchAllCategories,
+		minStars = null,
+		favOnly = false,
+		personalFilters = false
+	}: Props = $props();
+
+	// How many narrowing filters are active — drives the "Clear (N)" affordance.
+	const activeFilterCount = $derived(
+		selectedIds.length + (minStars !== null ? 1 : 0) + (favOnly ? 1 : 0)
+	);
 
 	/**
 	 * Display order (matches DESIGN.md §7's filter sidebar; mirrors AO3's
@@ -129,20 +152,83 @@
 		pushFilterState(selectedIds, next);
 	}
 
+	/**
+	 * You-layer Step 1b: rating + favorites filters. Both mutate one URL param
+	 * on top of the *current* params (copying everything else through), so they
+	 * compose with tags/match-all/search and round-trip in the URL. Like the
+	 * tag toggles, a filter change resets pagination to page 1.
+	 */
+	function pushFilterParam(mutate: (params: URLSearchParams) => void) {
+		const params = new URLSearchParams(page.url.searchParams);
+		mutate(params);
+		params.delete('page');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
+	function setMinStars(n: number | null) {
+		pushFilterParam((p) => (n ? p.set('min_stars', String(n)) : p.delete('min_stars')));
+	}
+
+	function toggleFavOnly() {
+		pushFilterParam((p) => (favOnly ? p.delete('fav') : p.set('fav', '1')));
+	}
+
+	/**
+	 * Clear every narrowing filter — tags, match-all, rating, favorites — in
+	 * one shot. Deliberately preserves the search `q`, sort, and per_page
+	 * (those aren't "filters": search has its own × and sort/per-page are view
+	 * prefs).
+	 */
 	function clearAll() {
-		pushFilterState([], []);
+		pushFilterParam((p) => {
+			p.delete('tags');
+			p.delete('match_all');
+			p.delete('min_stars');
+			p.delete('fav');
+		});
 	}
 </script>
 
 <aside class="filter-sidebar" aria-label="Search and filters">
 	<header class="filter-header">
 		<h2>Filters</h2>
-		{#if selectedIds.length > 0}
+		{#if activeFilterCount > 0}
 			<button type="button" class="clear" onclick={clearAll}>
-				Clear ({selectedIds.length})
+				Clear ({activeFilterCount})
 			</button>
 		{/if}
 	</header>
+
+	<!-- You-layer Step 1b: favorites-only + star-rating filters (library only).
+	     Sit above the AO3 tag categories; compose with everything below via the
+	     URL. Hidden on the author-detail reuse of this sidebar. -->
+	{#if personalFilters}
+		<section class="filter-section special-filter">
+			<label class="fav-toggle">
+				<input type="checkbox" checked={favOnly} onchange={toggleFavOnly} />
+				<span>Favorites only</span>
+			</label>
+		</section>
+
+		<section class="filter-section special-filter">
+			<div class="special-label">Star rating</div>
+			<div class="rating-buttons" role="group" aria-label="Minimum star rating">
+				{#each [1, 2, 3, 4, 5] as n (n)}
+					<button
+						type="button"
+						class="rating-btn"
+						class:active={minStars === n}
+						aria-pressed={minStars === n}
+						title={n === 5 ? '5 stars' : `${n}+ stars`}
+						onclick={() => setMinStars(minStars === n ? null : n)}
+					>
+						{n === 5 ? '5' : `${n}+`}
+					</button>
+				{/each}
+			</div>
+		</section>
+	{/if}
 
 	{#each CATEGORIES as { key, label } (key)}
 		{@const tagList = tags[key] ?? []}
@@ -228,6 +314,57 @@
 
 	.filter-section {
 		border-bottom: 1px solid var(--reader-border);
+	}
+	/* You-layer Step 1b: favorites + star-rating filter sections. Same
+	   bordered-row rhythm as the tag sections, with their own padding (they
+	   have no expand/collapse toggle). */
+	.special-filter {
+		padding: 8px 0;
+	}
+	.fav-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+	}
+	.fav-toggle input[type='checkbox'] {
+		accent-color: var(--reader-fg);
+		flex: 0 0 auto;
+	}
+	.special-label {
+		font-size: 0.85rem;
+		font-weight: 500;
+		margin-bottom: 6px;
+	}
+	.rating-buttons {
+		display: flex;
+		gap: 4px;
+	}
+	/* Minimum-threshold buttons (1+ … 5). Single-select: the active threshold
+	   is filled with the accent (matches the star control); click it again to
+	   clear back to "any rating". Theme-aware. */
+	.rating-btn {
+		flex: 1 1 0;
+		padding: 4px 0;
+		border: 1px solid var(--reader-border);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--reader-muted);
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+	.rating-btn:hover {
+		border-color: var(--reader-accent);
+		color: var(--reader-fg);
+	}
+	.rating-btn.active {
+		background: var(--reader-accent);
+		border-color: var(--reader-accent);
+		color: var(--reader-bg);
+		font-weight: 600;
 	}
 	.filter-section-toggle {
 		display: flex;

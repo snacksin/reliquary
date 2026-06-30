@@ -66,6 +66,13 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	// Forward `q` verbatim — server sanitizes for FTS5. We keep the
 	// raw value here so the SearchInput renders what the user typed.
 	const q = url.searchParams.get('q') ?? '';
+	// You-layer Step 1b: sort key + rating/favorites filters from the URL
+	// (the single source of truth — bookmarkable, survives pagination). The
+	// server re-validates all three before SQL.
+	const sort = url.searchParams.get('sort') === 'rating' ? 'rating' : 'added';
+	const rawMinStars = Number.parseInt(url.searchParams.get('min_stars') ?? '', 10);
+	const minStars = Number.isInteger(rawMinStars) && rawMinStars >= 1 && rawMinStars <= 5 ? rawMinStars : null;
+	const favOnly = url.searchParams.get('fav') === '1';
 
 	// Three fetches, parallelized:
 	//   - getTags(): drives the right-column filter sidebar
@@ -84,7 +91,10 @@ export const load: PageLoad = async ({ fetch, url }) => {
 			matchAll: matchAllCategories,
 			q,
 			page,
-			perPage
+			perPage,
+			sort,
+			minStars,
+			fav: favOnly
 		})
 	]);
 
@@ -95,6 +105,9 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		selectedTagIds,
 		matchAllCategories,
 		q,
+		sort,
+		minStars,
+		favOnly,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page
 	};

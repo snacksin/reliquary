@@ -84,6 +84,41 @@ function parsePerPage(raw: string | null): number {
 }
 
 /**
+ * Star-rating minimum-threshold filter (you-layer Step 1b): `min_stars=N`
+ * keeps only works rated >= N. Returns 1–5, or null for missing/invalid
+ * (treated as "no rating filter"). Unrated works (no ratings row → NULL via
+ * the LEFT JOIN) fail `rt.stars >= N`, so the threshold excludes them.
+ */
+function parseMinStars(raw: string | null): number | null {
+	if (!raw) return null;
+	const n = Number.parseInt(raw, 10);
+	return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+}
+
+/** Allowed library sort keys. Default `added` = today's behavior. */
+const ALLOWED_SORT = new Set(['added', 'rating']);
+function parseSort(raw: string | null): string {
+	return raw && ALLOWED_SORT.has(raw) ? raw : 'added';
+}
+
+/**
+ * ORDER BY for the paginated middle-column query. `added` (default) is the
+ * historical `w.ingested_at DESC` — byte-identical when `sort` is unset.
+ *
+ * `rating` sorts your rating high→low, but the leading `(rt.stars IS NULL)`
+ * key forces UNRATED works (NULL via the LEFT JOIN) into a bucket AFTER every
+ * rated work — so unrated never masquerades as 0/best; it sinks last. A
+ * stable `w.ingested_at DESC` tiebreak orders works of equal rating. No user
+ * input reaches this string (sort is validated to a fixed allow-list).
+ */
+function buildOrderBy(sort: string): string {
+	if (sort === 'rating') {
+		return 'ORDER BY (rt.stars IS NULL) ASC, rt.stars DESC, w.ingested_at DESC';
+	}
+	return 'ORDER BY w.ingested_at DESC';
+}
+
+/**
  * Sanitize the user's `q` into a safe FTS5 MATCH expression.
  *
  * Raw input goes through the works_fts virtual table, which has the
@@ -255,6 +290,9 @@ export const GET: RequestHandler = ({ url }) => {
 	const tagIds = parseTagIds(url.searchParams.get('tags'));
 	const matchAll = parseMatchAll(url.searchParams.get('match_all'));
 	const ftsQuery = sanitizeFtsQuery(url.searchParams.get('q'));
+	const minStars = parseMinStars(url.searchParams.get('min_stars'));
+	const favOnly = url.searchParams.get('fav') === '1';
+	const sort = parseSort(url.searchParams.get('sort'));
 	const paginate = url.searchParams.get('paginate') !== 'false';
 	const page = parsePage(url.searchParams.get('page'));
 	const perPage = parsePerPage(url.searchParams.get('per_page'));
@@ -292,6 +330,20 @@ export const GET: RequestHandler = ({ url }) => {
 		whereParams.push(ftsQuery);
 	}
 
+	// You-layer Step 1b filters — plain WHERE entries on aliases already in
+	// `baseSql`, so they AND-compose with the trashed/author/tag-CTE/search
+	// clauses (one pipeline, no fork) and flow into the COUNT(*) total. Both
+	// reference rows that exist only for rated/favorited works:
+	//   min_stars → rt.stars >= N (unrated rt.stars is NULL → excluded)
+	//   fav       → w.favorited_at IS NOT NULL (favorites-only)
+	if (minStars !== null) {
+		whereParts.push('rt.stars >= ?');
+		whereParams.push(minStars);
+	}
+	if (favOnly) {
+		whereParts.push('w.favorited_at IS NOT NULL');
+	}
+
 	const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
 	const baseSql = `
 		FROM works w
@@ -327,7 +379,7 @@ export const GET: RequestHandler = ({ url }) => {
 
 	const rows = db
 		.prepare(
-			`SELECT ${SELECT_COLUMNS} ${baseSql} ORDER BY w.ingested_at DESC LIMIT ? OFFSET ?`
+			`SELECT ${SELECT_COLUMNS} ${baseSql} ${buildOrderBy(sort)} LIMIT ? OFFSET ?`
 		)
 		.all(...baseParams, perPage, offset) as Row[];
 

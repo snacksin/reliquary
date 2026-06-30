@@ -14,6 +14,14 @@
 	const PER_PAGE_DEFAULT = 12;
 	const PER_PAGE_STORAGE_KEY = 'prefs:library:per_page';
 
+	// Library sort options (you-layer Step 1b). 'added' is the default
+	// (today's ingested_at DESC). DESIGN §7 lists more (title/author); those
+	// are trivial future additions kept out of this PR's scope.
+	const SORT_OPTIONS = [
+		{ value: 'added', label: 'Date added' },
+		{ value: 'rating', label: 'Your rating' }
+	] as const;
+
 	let { data }: PageProps = $props();
 	let fileInput: HTMLInputElement | undefined = $state();
 	let uploading = $state(false);
@@ -39,6 +47,15 @@
 		data.works
 			.filter((w) => w.is_favorite && w.favorited_at)
 			.toSorted((a, b) => (b.favorited_at ?? '').localeCompare(a.favorited_at ?? ''))
+	);
+
+	// Any narrowing filter active (tags / search / rating / favorites) — drives
+	// the "X of Y" count and the empty-state copy.
+	const hasActiveFilters = $derived(
+		data.selectedTagIds.length > 0 ||
+			data.q.trim().length > 0 ||
+			data.minStars !== null ||
+			data.favOnly
 	);
 
 	// Percent = real chapters read to the END (the high-water mark), NOT the
@@ -135,6 +152,18 @@
 		const params = new URLSearchParams(pageState.url.searchParams);
 		if (next === PER_PAGE_DEFAULT) params.delete('per_page');
 		else params.set('per_page', String(next));
+		params.delete('page');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
+	// Sort picker — URL-only (bookmarkable, persists across pagination). A new
+	// sort re-orders the whole result set, so the current page index is
+	// meaningless: reset to page 1 (same rule as filter/search/per-page).
+	function pushSort(next: string) {
+		const params = new URLSearchParams(pageState.url.searchParams);
+		if (next === 'added') params.delete('sort');
+		else params.set('sort', next);
 		params.delete('page');
 		const qs = params.toString();
 		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
@@ -251,7 +280,7 @@
 				Library
 				{#if data.works.length > 0}
 					<span class="middle-count">
-						{#if data.selectedTagIds.length > 0 || data.q.trim().length > 0}
+						{#if hasActiveFilters}
 							{data.filteredPage.total} of {data.works.length} work{data.works.length === 1
 								? ''
 								: 's'}
@@ -261,6 +290,16 @@
 					</span>
 				{/if}
 			</h2>
+			{#if data.works.length > 0}
+				<label class="sort-picker">
+					<span class="sort-label">Sort</span>
+					<select value={data.sort} onchange={(e) => pushSort((e.target as HTMLSelectElement).value)}>
+						{#each SORT_OPTIONS as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
 			{#if data.filteredPage.total > 0}
 				<label class="per-page-picker">
 					<span class="per-page-label">Per page</span>
@@ -279,7 +318,7 @@
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
 		{:else if data.filteredPage.total === 0}
 			<p class="empty">
-				{#if data.q.trim().length > 0 && data.selectedTagIds.length > 0}
+				{#if data.q.trim().length > 0 && (data.selectedTagIds.length > 0 || data.minStars !== null || data.favOnly)}
 					No works match your search and filters.
 				{:else if data.q.trim().length > 0}
 					No works match your search.
@@ -303,6 +342,9 @@
 			tags={data.tagGroups}
 			selectedIds={data.selectedTagIds}
 			matchAllCategories={data.matchAllCategories}
+			minStars={data.minStars}
+			favOnly={data.favOnly}
+			personalFilters
 		/>
 	</div>
 </main>
@@ -463,7 +505,8 @@
 		flex: 1 1 auto;
 		margin: 0;
 	}
-	.per-page-picker {
+	.per-page-picker,
+	.sort-picker {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
@@ -473,7 +516,8 @@
 		color: var(--reader-muted);
 		flex: 0 0 auto;
 	}
-	.per-page-picker select {
+	.per-page-picker select,
+	.sort-picker select {
 		font: inherit;
 		text-transform: none;
 		letter-spacing: normal;
