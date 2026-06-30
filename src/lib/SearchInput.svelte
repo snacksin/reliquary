@@ -103,7 +103,7 @@
 			class="search-input"
 			class:has-value={value.length > 0}
 			type="search"
-			placeholder="Search title, author, summary…"
+			placeholder="Search title, author, summary, notes…"
 			autocomplete="off"
 			spellcheck="false"
 			{value}

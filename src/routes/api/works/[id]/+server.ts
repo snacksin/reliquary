@@ -14,10 +14,12 @@ export const GET: RequestHandler = ({ params }) => {
 			   rp.max_read_chapter AS last_max_read_chapter,
 			   rp.dismissed_at AS last_dismissed_at,
 			   rp.updated_at AS last_updated_at,
-			   rt.stars AS rating
+			   rt.stars AS rating,
+			   n.body AS note
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 			 LEFT JOIN ratings rt ON rt.work_id = w.id
+			 LEFT JOIN notes n ON n.work_id = w.id
 			 WHERE w.id = ?`
 		)
 		.get(params.id) as
@@ -38,6 +40,7 @@ export const GET: RequestHandler = ({ params }) => {
 				last_dismissed_at: string | null;
 				last_updated_at: string | null;
 				rating: number | null;
+				note: string | null;
 		  }
 		| undefined;
 
@@ -70,6 +73,7 @@ export const GET: RequestHandler = ({ params }) => {
 		trashed_at: row.trashed_at,
 		read_at: row.read_at,
 		rating: row.rating,
+		note: row.note,
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:

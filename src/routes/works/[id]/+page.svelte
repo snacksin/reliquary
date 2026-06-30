@@ -16,6 +16,7 @@
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
+	import NotesEditor from '$lib/NotesEditor.svelte';
 	import { Heart, Star } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -437,6 +438,12 @@
 			<a href="/works/{data.work.id}/afterword">End notes</a>
 		</p>
 	{/if}
+
+	<!-- Per-work markdown note (you-layer Step 2). Keyed on the work id so it
+	     remounts (re-seeds its baseline) when navigating between fics. -->
+	{#key data.work.id}
+		<NotesEditor workId={data.work.id} note={data.work.note ?? null} />
+	{/key}
 
 	{#if !isTrashed}
 		<div class="danger-zone">
