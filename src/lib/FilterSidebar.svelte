@@ -7,8 +7,8 @@
 		tags: TagGroups;
 		selectedIds: number[];
 		matchAllCategories: TagCategory[];
-		/** You-layer Step 1b: minimum star-rating threshold (1–5), or null. */
-		minStars?: number | null;
+		/** You-layer Step 1c: exact star-rating multi-select (1–5 values). */
+		stars?: number[];
 		/** You-layer Step 1b: favorites-only filter. */
 		favOnly?: boolean;
 		/**
@@ -23,14 +23,15 @@
 		tags,
 		selectedIds,
 		matchAllCategories,
-		minStars = null,
+		stars = [],
 		favOnly = false,
 		personalFilters = false
 	}: Props = $props();
 
 	// How many narrowing filters are active — drives the "Clear (N)" affordance.
+	// Each selected star counts like a selected tag (multi-select).
 	const activeFilterCount = $derived(
-		selectedIds.length + (minStars !== null ? 1 : 0) + (favOnly ? 1 : 0)
+		selectedIds.length + stars.length + (favOnly ? 1 : 0)
 	);
 
 	/**
@@ -166,8 +167,11 @@
 		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
 	}
 
-	function setMinStars(n: number | null) {
-		pushFilterParam((p) => (n ? p.set('min_stars', String(n)) : p.delete('min_stars')));
+	// Toggle one rating value in/out of the multi-select set (OR-within), then
+	// push the new `stars` list — same idiom as toggleTag.
+	function toggleStar(n: number) {
+		const next = stars.includes(n) ? stars.filter((s) => s !== n) : [...stars, n];
+		pushFilterParam((p) => (next.length ? p.set('stars', next.join(',')) : p.delete('stars')));
 	}
 
 	function toggleFavOnly() {
@@ -184,7 +188,7 @@
 		pushFilterParam((p) => {
 			p.delete('tags');
 			p.delete('match_all');
-			p.delete('min_stars');
+			p.delete('stars');
 			p.delete('fav');
 		});
 	}
@@ -213,17 +217,17 @@
 
 		<section class="filter-section special-filter">
 			<div class="special-label">Star rating</div>
-			<div class="rating-buttons" role="group" aria-label="Minimum star rating">
+			<div class="rating-buttons" role="group" aria-label="Star rating">
 				{#each [1, 2, 3, 4, 5] as n (n)}
 					<button
 						type="button"
 						class="rating-btn"
-						class:active={minStars === n}
-						aria-pressed={minStars === n}
-						title={n === 5 ? '5 stars' : `${n}+ stars`}
-						onclick={() => setMinStars(minStars === n ? null : n)}
+						class:active={stars.includes(n)}
+						aria-pressed={stars.includes(n)}
+						title="{n} star{n === 1 ? '' : 's'}"
+						onclick={() => toggleStar(n)}
 					>
-						{n === 5 ? '5' : `${n}+`}
+						{n}
 					</button>
 				{/each}
 			</div>
