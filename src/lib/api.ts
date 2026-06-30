@@ -100,8 +100,8 @@ type ListOpts = {
 	author?: string;
 	/** Library sort key (you-layer Step 1b): 'added' (default) | 'rating'. */
 	sort?: string;
-	/** Star-rating minimum-threshold filter: keep works rated >= minStars (1–5). */
-	minStars?: number | null;
+	/** Star-rating filter: exact multi-select — keep works rated any of these (1–5). */
+	stars?: number[];
 	/** Favorites-only filter: keep only favorited works. */
 	fav?: boolean;
 };
@@ -122,7 +122,7 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	// default/empty so a bare listing URL stays clean (server treats absent as
 	// "no filter" / default sort).
 	if (opts?.sort && opts.sort !== 'added') search.set('sort', opts.sort);
-	if (opts?.minStars) search.set('min_stars', String(opts.minStars));
+	if (opts?.stars && opts.stars.length > 0) search.set('stars', opts.stars.join(','));
 	if (opts?.fav) search.set('fav', '1');
 	return search;
 }

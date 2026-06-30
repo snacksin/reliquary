@@ -54,7 +54,7 @@
 	const hasActiveFilters = $derived(
 		data.selectedTagIds.length > 0 ||
 			data.q.trim().length > 0 ||
-			data.minStars !== null ||
+			data.stars.length > 0 ||
 			data.favOnly
 	);
 
@@ -318,7 +318,7 @@
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
 		{:else if data.filteredPage.total === 0}
 			<p class="empty">
-				{#if data.q.trim().length > 0 && (data.selectedTagIds.length > 0 || data.minStars !== null || data.favOnly)}
+				{#if data.q.trim().length > 0 && (data.selectedTagIds.length > 0 || data.stars.length > 0 || data.favOnly)}
 					No works match your search and filters.
 				{:else if data.q.trim().length > 0}
 					No works match your search.
@@ -342,7 +342,7 @@
 			tags={data.tagGroups}
 			selectedIds={data.selectedTagIds}
 			matchAllCategories={data.matchAllCategories}
-			minStars={data.minStars}
+			stars={data.stars}
 			favOnly={data.favOnly}
 			personalFilters
 		/>

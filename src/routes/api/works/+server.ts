@@ -84,15 +84,21 @@ function parsePerPage(raw: string | null): number {
 }
 
 /**
- * Star-rating minimum-threshold filter (you-layer Step 1b): `min_stars=N`
- * keeps only works rated >= N. Returns 1–5, or null for missing/invalid
- * (treated as "no rating filter"). Unrated works (no ratings row → NULL via
- * the LEFT JOIN) fail `rt.stars >= N`, so the threshold excludes them.
+ * Star-rating filter (you-layer Step 1c): exact multi-select. `stars=3,5` is a
+ * comma-separated list of rating values; a work matches if its rating is any
+ * one of them (`rt.stars IN (…)`, OR-within — the same idiom as the tag
+ * filter). Coerces to the valid 1–5 set, dedupes, drops anything else; []
+ * means "no rating filter". Unrated works (no ratings row → NULL via the LEFT
+ * JOIN) are never IN the list, so they're excluded whenever a value is picked.
  */
-function parseMinStars(raw: string | null): number | null {
-	if (!raw) return null;
-	const n = Number.parseInt(raw, 10);
-	return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+function parseStars(raw: string | null): number[] {
+	if (!raw) return [];
+	const set = new Set<number>();
+	for (const token of raw.split(',')) {
+		const n = Number.parseInt(token.trim(), 10);
+		if (Number.isInteger(n) && n >= 1 && n <= 5) set.add(n);
+	}
+	return [...set];
 }
 
 /** Allowed library sort keys. Default `added` = today's behavior. */
@@ -290,7 +296,7 @@ export const GET: RequestHandler = ({ url }) => {
 	const tagIds = parseTagIds(url.searchParams.get('tags'));
 	const matchAll = parseMatchAll(url.searchParams.get('match_all'));
 	const ftsQuery = sanitizeFtsQuery(url.searchParams.get('q'));
-	const minStars = parseMinStars(url.searchParams.get('min_stars'));
+	const stars = parseStars(url.searchParams.get('stars'));
 	const favOnly = url.searchParams.get('fav') === '1';
 	const sort = parseSort(url.searchParams.get('sort'));
 	const paginate = url.searchParams.get('paginate') !== 'false';
@@ -330,15 +336,16 @@ export const GET: RequestHandler = ({ url }) => {
 		whereParams.push(ftsQuery);
 	}
 
-	// You-layer Step 1b filters — plain WHERE entries on aliases already in
-	// `baseSql`, so they AND-compose with the trashed/author/tag-CTE/search
-	// clauses (one pipeline, no fork) and flow into the COUNT(*) total. Both
-	// reference rows that exist only for rated/favorited works:
-	//   min_stars → rt.stars >= N (unrated rt.stars is NULL → excluded)
-	//   fav       → w.favorited_at IS NOT NULL (favorites-only)
-	if (minStars !== null) {
-		whereParts.push('rt.stars >= ?');
-		whereParams.push(minStars);
+	// You-layer rating/favorites filters — plain WHERE entries on aliases
+	// already in `baseSql`, so they AND-compose with the trashed/author/tag-CTE/
+	// search clauses (one pipeline, no fork) and flow into the COUNT(*) total.
+	// Both reference rows that exist only for rated/favorited works:
+	//   stars → rt.stars IN (…) — exact multi-select, OR-within (Step 1c);
+	//           unrated rt.stars is NULL → never in the list, so it's excluded
+	//   fav   → w.favorited_at IS NOT NULL (favorites-only)
+	if (stars.length > 0) {
+		whereParts.push(`rt.stars IN (${stars.map(() => '?').join(', ')})`);
+		whereParams.push(...stars);
 	}
 	if (favOnly) {
 		whereParts.push('w.favorited_at IS NOT NULL');

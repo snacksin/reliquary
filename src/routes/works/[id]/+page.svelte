@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import {
 		setFavorite,
 		unsetFavorite,
@@ -20,6 +20,17 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// History-aware "← Library" back (Step 1c; mirrors the series back button).
+	// When you arrived from the library, return to that exact URL — preserving
+	// its sort + filter query params — so in-app back matches browser-back
+	// instead of dropping to a bare `/` (which reset the sort/filters). Any
+	// other origin (author/series/search, or a cold load) falls back to `/`.
+	let backHref = $state('/');
+	afterNavigate((nav) => {
+		const from = nav.from?.url;
+		backHref = from && from.pathname === '/' ? from.pathname + from.search : '/';
+	});
 
 	// Soft-trash state (M2.3 Step 5). When trashed, the page shows a
 	// banner with a Restore action instead of the Move-to-Trash button.
@@ -274,7 +285,7 @@
 <svelte:head><title>Reliquary — {data.work.title}</title></svelte:head>
 
 <main>
-	<p class="back"><a href="/">← Library</a></p>
+	<p class="back"><a href={backHref}>← Library</a></p>
 	{#if isTrashed}
 		<div class="trash-banner" role="status">
 			<span>

@@ -70,8 +70,12 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	// (the single source of truth — bookmarkable, survives pagination). The
 	// server re-validates all three before SQL.
 	const sort = url.searchParams.get('sort') === 'rating' ? 'rating' : 'added';
-	const rawMinStars = Number.parseInt(url.searchParams.get('min_stars') ?? '', 10);
-	const minStars = Number.isInteger(rawMinStars) && rawMinStars >= 1 && rawMinStars <= 5 ? rawMinStars : null;
+	// Exact multi-select star filter (Step 1c): comma-separated 1–5 values, same
+	// shape as `tags`. The server re-validates before SQL.
+	const stars = (url.searchParams.get('stars') ?? '')
+		.split(',')
+		.map((t) => Number.parseInt(t.trim(), 10))
+		.filter((n) => Number.isInteger(n) && n >= 1 && n <= 5);
 	const favOnly = url.searchParams.get('fav') === '1';
 
 	// Three fetches, parallelized:
@@ -93,7 +97,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 			page,
 			perPage,
 			sort,
-			minStars,
+			stars,
 			fav: favOnly
 		})
 	]);
@@ -106,7 +110,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		matchAllCategories,
 		q,
 		sort,
-		minStars,
+		stars,
 		favOnly,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page
