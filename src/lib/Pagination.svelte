@@ -53,10 +53,14 @@
 	function navTo(target: number, ev: MouseEvent) {
 		// Let modifier-clicks (cmd/ctrl-click, middle-click) open in a
 		// new tab — only intercept plain left clicks for the in-page
-		// navigation flow. `noScroll` so the page doesn't jump to top.
+		// navigation flow. `noScroll` keeps SvelteKit from managing scroll;
+		// we then jump to the top of the results ourselves so a new page
+		// starts at the top (logged QoL) — unlike filter/search which stay put.
 		if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
 		ev.preventDefault();
-		goto(hrefFor(target), { keepFocus: true, noScroll: true });
+		goto(hrefFor(target), { keepFocus: true, noScroll: true }).then(() =>
+			window.scrollTo({ top: 0 })
+		);
 	}
 </script>
 

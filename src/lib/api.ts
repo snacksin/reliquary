@@ -76,8 +76,9 @@ export type Work = {
 	rating?: number | null;
 	/**
 	 * Per-work markdown note (you-layer): the raw markdown body, or null/absent
-	 * when there's no note. Rendered + sanitized on the client. Only present on
-	 * the work-detail response. Set only via PUT /api/works/[id]/note.
+	 * when there's no note. Projected onto BOTH the library-list feed (drives a
+	 * plain-text row snippet — Follow-up B) and the work-detail feed (rendered +
+	 * sanitized full markdown). Set only via PUT /api/works/[id]/note.
 	 */
 	note?: string | null;
 };
