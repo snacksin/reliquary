@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Heart, Star } from 'lucide-svelte';
+	import { summaryText, notePreview } from '$lib/rowText';
 	import type { Work } from '$lib/api';
 
 	/**
@@ -24,6 +25,11 @@
 	const chapterLabel = $derived(
 		`${work.chapter_count} chapter${work.chapter_count === 1 ? '' : 's'}`
 	);
+	// Plain-text row content (Follow-up B). Both stripped to text (SSR-safe),
+	// never {@html}. The summary shows in FULL (paragraph breaks preserved); the
+	// note is a truncated + CSS-clamped snippet (full note lives on the detail).
+	const summaryFull = $derived(summaryText(work.summary));
+	const noteSnippet = $derived(notePreview(work.note));
 </script>
 
 <a href="/works/{work.id}" class="library-row">
@@ -55,13 +61,24 @@
 				{/each}
 			</span>
 		{/if}
+		{#if summaryFull}
+			<p class="row-summary">{summaryFull}</p>
+		{/if}
+		{#if noteSnippet}
+			<div class="row-note">
+				<span class="row-note-label">Note</span>
+				<span class="row-note-text">{noteSnippet}</span>
+			</div>
+		{/if}
 	</div>
 </a>
 
 <style>
 	.library-row {
 		display: flex;
-		align-items: center;
+		/* Top-align so titles line up down the list now that rows can carry a
+		   summary preview + note block of varying height (Follow-up B). */
+		align-items: flex-start;
 		gap: 14px;
 		color: inherit;
 		text-decoration: none;
@@ -89,7 +106,7 @@
 		display: block;
 		color: var(--reader-muted);
 		font-size: 0.9rem;
-		margin-top: 0.15rem;
+		margin-top: 0.25rem;
 	}
 	/* Read-only star rating on a library row (you-layer). Only rendered when
 	   the work is rated, so unrated rows stay clean. Stars inherit the theme
@@ -98,7 +115,47 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 1px;
-		margin-top: 0.25rem;
+		margin-top: 0.35rem;
+	}
+	/* Summary (Follow-up B, review) — the FULL summary, plain text (HTML
+	   stripped), muted. `pre-line` honors the paragraph/line breaks that
+	   summaryText() converts from block/<br> boundaries, so a multi-paragraph
+	   summary reads with structure instead of as a run-on blob. Roomy
+	   line-height so it's not cramped. */
+	.row-summary {
+		margin: 0.45rem 0 0;
+		color: var(--reader-muted);
+		font-size: 0.85rem;
+		line-height: 1.55;
+		white-space: pre-line;
+	}
+	/* Personal note on the row — AO3-bookmark-note style: a distinct bordered,
+	   card-tinted block. Plain-text snippet (markdown NOT rendered here; the
+	   detail page renders it), clamped to three lines. */
+	.row-note {
+		margin-top: 0.65rem;
+		padding: 0.45rem 0.7rem;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-card-bg);
+	}
+	.row-note-label {
+		display: block;
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+		margin-bottom: 0.1rem;
+	}
+	.row-note-text {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		color: var(--reader-fg);
+		font-size: 0.85rem;
+		line-height: 1.5;
 	}
 	.cover-slot {
 		flex: 0 0 140px;
