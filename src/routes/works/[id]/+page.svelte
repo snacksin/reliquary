@@ -413,6 +413,14 @@
 	{#if data.work.summary}
 		<div class="summary">{@html data.work.summary}</div>
 	{/if}
+
+	<!-- Per-work markdown note (you-layer Step 2). Sits right under the summary
+	     (order: summary → Notes → Tags&metadata → Chapters). Keyed on the work
+	     id so it remounts (re-seeds its baseline) when navigating between fics. -->
+	{#key data.work.id}
+		<NotesEditor workId={data.work.id} note={data.work.note ?? null} />
+	{/key}
+
 	{#if hasPreface}
 		<p class="wrapper-link">
 			<a href="/works/{data.work.id}/preface">Tags &amp; metadata</a>
@@ -438,12 +446,6 @@
 			<a href="/works/{data.work.id}/afterword">End notes</a>
 		</p>
 	{/if}
-
-	<!-- Per-work markdown note (you-layer Step 2). Keyed on the work id so it
-	     remounts (re-seeds its baseline) when navigating between fics. -->
-	{#key data.work.id}
-		<NotesEditor workId={data.work.id} note={data.work.note ?? null} />
-	{/key}
 
 	{#if !isTrashed}
 		<div class="danger-zone">

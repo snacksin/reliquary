@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import { browser } from '$app/environment';
@@ -56,13 +57,78 @@
 			saving = false;
 		}
 	}
+
+	// ─── Formatting toolbar (edit mode) ──────────────────────────────
+	// Inserts markdown so you don't have to remember the syntax. Each command
+	// wraps the current selection (or drops the markers at the cursor when
+	// nothing is selected). `draft` is bound to the textarea, so we mutate it
+	// then restore the caret/selection after the DOM updates (tick). The
+	// textarea keeps its selectionStart/End across the button click (blur
+	// doesn't clear them), so reading them here is safe.
+	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+
+	async function surround(before: string, after: string) {
+		const ta = textareaEl;
+		if (!ta) return;
+		const start = ta.selectionStart;
+		const end = ta.selectionEnd;
+		const sel = draft.slice(start, end);
+		draft = draft.slice(0, start) + before + sel + after + draft.slice(end);
+		await tick();
+		ta.focus();
+		// Re-select the wrapped text, or place the caret between the markers.
+		const inner = start + before.length;
+		ta.setSelectionRange(inner, inner + sel.length);
+	}
+
+	async function prefixLines(prefix: string) {
+		const ta = textareaEl;
+		if (!ta) return;
+		const start = ta.selectionStart;
+		const end = ta.selectionEnd;
+		// Expand to the start of the first selected line, then prefix each line.
+		const lineStart = draft.lastIndexOf('\n', start - 1) + 1;
+		const prefixed = draft
+			.slice(lineStart, end)
+			.split('\n')
+			.map((line) => prefix + line)
+			.join('\n');
+		draft = draft.slice(0, lineStart) + prefixed + draft.slice(end);
+		await tick();
+		ta.focus();
+		ta.setSelectionRange(lineStart, lineStart + prefixed.length);
+	}
+
+	async function insertLink() {
+		const ta = textareaEl;
+		if (!ta) return;
+		const start = ta.selectionStart;
+		const end = ta.selectionEnd;
+		const text = draft.slice(start, end) || 'text';
+		const snippet = `[${text}](url)`;
+		draft = draft.slice(0, start) + snippet + draft.slice(end);
+		await tick();
+		ta.focus();
+		// Select the `url` placeholder so you can type the address next.
+		const urlStart = start + snippet.length - 4;
+		ta.setSelectionRange(urlStart, urlStart + 3);
+	}
 </script>
 
 <section class="notes">
 	<h2>Notes</h2>
 	{#if editing}
+		<div class="md-toolbar" role="toolbar" aria-label="Formatting">
+			<button type="button" class="tb-btn bold" onclick={() => surround('**', '**')} title="Bold" aria-label="Bold">B</button>
+			<button type="button" class="tb-btn italic" onclick={() => surround('_', '_')} title="Italic" aria-label="Italic">I</button>
+			<button type="button" class="tb-btn" onclick={() => prefixLines('## ')} title="Heading" aria-label="Heading">H</button>
+			<button type="button" class="tb-btn" onclick={() => prefixLines('- ')} title="Bulleted list" aria-label="Bulleted list">• List</button>
+			<button type="button" class="tb-btn" onclick={() => prefixLines('1. ')} title="Numbered list" aria-label="Numbered list">1. List</button>
+			<button type="button" class="tb-btn" onclick={insertLink} title="Link" aria-label="Link">Link</button>
+		</div>
 		<textarea
 			class="note-editor"
+			bind:this={textareaEl}
 			bind:value={draft}
 			placeholder="Write a note in markdown — your thoughts, content notes, where to pick up…"
 		></textarea>
@@ -90,6 +156,35 @@
 	.notes h2 {
 		font-size: 1.1rem;
 		margin: 0 0 0.6rem;
+	}
+	/* Formatting toolbar — a compact button row above the textarea. Theme-aware
+	   chips; sits flush on top of the editor. */
+	.md-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-bottom: 6px;
+	}
+	.tb-btn {
+		font: inherit;
+		font-size: 0.8rem;
+		line-height: 1;
+		padding: 5px 9px;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-card-bg);
+		color: var(--reader-fg);
+		cursor: pointer;
+	}
+	.tb-btn:hover {
+		border-color: var(--reader-accent);
+	}
+	.tb-btn.bold {
+		font-weight: 700;
+	}
+	.tb-btn.italic {
+		font-style: italic;
+		font-family: Georgia, serif;
 	}
 	/* Full-width editor; taller on desktop, compact on small windows. */
 	.note-editor {
