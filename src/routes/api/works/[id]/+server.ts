@@ -15,7 +15,14 @@ export const GET: RequestHandler = ({ params }) => {
 			   rp.dismissed_at AS last_dismissed_at,
 			   rp.updated_at AS last_updated_at,
 			   rt.stars AS rating,
-			   n.body AS note
+			   n.body AS note,
+			   (SELECT json_group_array(json_object('id', pt.id, 'name', pt.name))
+			      FROM (SELECT t.id, t.name
+			              FROM work_tags wt
+			              JOIN tags t ON t.id = wt.tag_id
+			             WHERE wt.work_id = w.id AND t.category = 'personal'
+			             ORDER BY t.name COLLATE NOCASE ASC) pt
+			   ) AS personal_tags
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 			 LEFT JOIN ratings rt ON rt.work_id = w.id
@@ -41,6 +48,7 @@ export const GET: RequestHandler = ({ params }) => {
 				last_updated_at: string | null;
 				rating: number | null;
 				note: string | null;
+				personal_tags: string;
 		  }
 		| undefined;
 
@@ -74,6 +82,10 @@ export const GET: RequestHandler = ({ params }) => {
 		read_at: row.read_at,
 		rating: row.rating,
 		note: row.note,
+		// Personal tags (you-layer Private tags) — same JSON aggregation as the
+		// /api/works rows, so the Work shape stays symmetric across both feeds
+		// (rating/note precedent). Seeds the detail page's my-tags editor.
+		personal_tags: JSON.parse(row.personal_tags) as { id: number; name: string }[],
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:

@@ -19,6 +19,7 @@ type Row = {
 	last_updated_at: string | null;
 	rating: number | null;
 	note: string | null;
+	personal_tags: string;
 };
 
 /**
@@ -42,6 +43,11 @@ function parseTagIds(raw: string | null): number[] {
  * src/lib/server/epub.ts; kept duplicated as a `Set` lookup here so
  * the endpoint can reject unknown category names from the query
  * param without importing the server-only epub module.
+ *
+ * `personal` (you-layer Private tags) is a first-class filter category:
+ * personal tag ids ride the same `tags=` param through the same CTE (which
+ * is category-generic), and listing it here lets `match_all=personal` opt
+ * the "My Tags" section into AND-within like any AO3 category.
  */
 const KNOWN_CATEGORIES = new Set<string>([
 	'rating',
@@ -50,7 +56,8 @@ const KNOWN_CATEGORIES = new Set<string>([
 	'fandom',
 	'relationship',
 	'character',
-	'freeform'
+	'freeform',
+	'personal'
 ]);
 
 /**
@@ -177,6 +184,10 @@ function rowToWork(r: Row) {
 		// can show a plain-text snippet (Follow-up B). The full markdown note
 		// is rendered on the detail page.
 		note: r.note,
+		// Personal tags (you-layer Private tags) — name-sorted {id,name} list,
+		// aggregated to JSON in SQL (ordered inner select: json_group_array
+		// alone doesn't guarantee order). Drives the row's my-tag chips.
+		personal_tags: JSON.parse(r.personal_tags) as { id: number; name: string }[],
 		// When this work last GREW its chapter count (update-in-place). The
 		// Continue Reading carousel sorts a resurfaced work by the later of
 		// this and its reading recency, so fresh chapters bump it up.
@@ -213,7 +224,14 @@ const SELECT_COLUMNS = `
   rp.dismissed_at AS last_dismissed_at,
   rp.updated_at AS last_updated_at,
   rt.stars AS rating,
-  n.body AS note
+  n.body AS note,
+  (SELECT json_group_array(json_object('id', pt.id, 'name', pt.name))
+     FROM (SELECT t.id, t.name
+             FROM work_tags wt
+             JOIN tags t ON t.id = wt.tag_id
+            WHERE wt.work_id = w.id AND t.category = 'personal'
+            ORDER BY t.name COLLATE NOCASE ASC) pt
+  ) AS personal_tags
 `;
 
 /**

@@ -81,6 +81,15 @@ export type Work = {
 	 * sanitized full markdown). Set only via PUT /api/works/[id]/note.
 	 */
 	note?: string | null;
+	/**
+	 * Personal tags (you-layer Private tags): the user's own tags on this work,
+	 * name-sorted. A SEPARATE vocabulary from the AO3 tag namespace (stored
+	 * under the reserved `personal` category — never mixed into AO3 groups or
+	 * counts). Projected onto the library-list + work-detail feeds (drives the
+	 * row chips + seeds the detail editor); absent on leaner feeds (series).
+	 * Managed only via /api/works/[id]/tags.
+	 */
+	personal_tags?: PersonalTag[];
 };
 
 type Fetch = typeof fetch;
@@ -475,6 +484,14 @@ export type Tag = {
  */
 export type TagGroups = Record<TagCategory, Tag[]>;
 
+/**
+ * A filterable category: the seven AO3 categories plus `personal` (you-layer
+ * Private tags). `match_all=` accepts all eight — the server's filter CTE is
+ * category-generic — but `TagGroups`/`getTags` stay AO3-only (personal tags
+ * have their own feed, `getPersonalTags`).
+ */
+export type FilterCategory = TagCategory | 'personal';
+
 export async function getTags(
 	fetch: Fetch,
 	opts?: { includeHidden?: boolean; author?: string }
@@ -589,6 +606,53 @@ export async function getAuthorTagVocab(fetch: Fetch): Promise<AuthorTagVocabIte
 	const res = await fetch('/api/author-tags');
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+// ─── Personal tags (you-layer Private tags) ─────────────────────────
+
+/** A personal tag attached to a work (a row from the reusable vocabulary). */
+export type PersonalTag = { id: number; name: string };
+
+/** A vocabulary entry plus how many live works carry it (sidebar + combobox). */
+export type PersonalTagVocabItem = { id: number; name: string; count: number };
+
+/**
+ * The full personal-tag vocabulary with live-work counts, sorted count DESC
+ * then name ASC (the sidebar's display order; the combobox re-sorts by name).
+ */
+export async function getPersonalTags(fetch: Fetch): Promise<PersonalTagVocabItem[]> {
+	const res = await fetch('/api/personal-tags');
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Attach a personal tag by name (find-or-creates in the vocabulary). Returns it. */
+export async function addWorkPersonalTag(
+	workId: string,
+	tag: string,
+	fetch: Fetch
+): Promise<PersonalTag> {
+	const res = await fetch(`/api/works/${workId}/tags`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ name: tag })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Detach a personal tag from this work (leaves it in the vocabulary). */
+export async function removeWorkPersonalTag(
+	workId: string,
+	tagId: number,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/tags`, {
+		method: 'DELETE',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ id: tagId })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 // ─── Series Pages (Part 1) ──────────────────────────────────────────

@@ -30,6 +30,9 @@
 	// note is a truncated + CSS-clamped snippet (full note lives on the detail).
 	const summaryFull = $derived(summaryText(work.summary));
 	const noteSnippet = $derived(notePreview(work.note));
+	// Personal tags (you-layer Private tags). Optional on Work — leaner feeds
+	// (series rows) don't project them, so those rows simply show no chips.
+	const personalTags = $derived(work.personal_tags ?? []);
 </script>
 
 <a href="/works/{work.id}" class="library-row">
@@ -63,6 +66,13 @@
 					/>
 				{/each}
 			</span>
+		{/if}
+		{#if personalTags.length > 0}
+			<ul class="my-tags" aria-label="Your tags">
+				{#each personalTags as tag (tag.id)}
+					<li class="my-tag">{tag.name}</li>
+				{/each}
+			</ul>
 		{/if}
 		{#if summaryFull}
 			<p class="row-summary">{summaryFull}</p>
@@ -120,6 +130,29 @@
 		gap: 1px;
 		margin-top: 0.35rem;
 	}
+	/* Personal-tag chips (you-layer Private tags) — deliberately distinct from
+	   anything AO3: small accent-bordered/tinted pills so they read as YOURS
+	   (AO3 tags never render on rows at all). color-mix keeps the tint
+	   theme-aware in light/dark/sepia. */
+	.my-tags {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		padding: 0;
+		margin: 0.45rem 0 0;
+	}
+	.my-tag {
+		font-size: 0.72rem;
+		line-height: 1.3;
+		padding: 1px 8px;
+		border-radius: 999px;
+		border: 1px solid var(--reader-accent);
+		background: color-mix(in srgb, var(--reader-accent) 12%, transparent);
+		color: var(--reader-fg);
+		word-break: break-word;
+	}
+
 	/* Summary (Follow-up B, review) — the FULL summary, plain text (HTML
 	   stripped), muted. `pre-line` honors the paragraph/line breaks that
 	   summaryText() converts from block/<br> boundaries, so a multi-paragraph
