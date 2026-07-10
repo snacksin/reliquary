@@ -55,7 +55,8 @@
 		data.selectedTagIds.length > 0 ||
 			data.q.trim().length > 0 ||
 			data.stars.length > 0 ||
-			data.favOnly
+			data.favOnly ||
+			data.hideRead
 	);
 
 	// Percent = real chapters read to the END (the high-water mark), NOT the
@@ -318,7 +319,7 @@
 			<p class="empty">No works yet — upload an EPUB to get started.</p>
 		{:else if data.filteredPage.total === 0}
 			<p class="empty">
-				{#if data.q.trim().length > 0 && (data.selectedTagIds.length > 0 || data.stars.length > 0 || data.favOnly)}
+				{#if data.q.trim().length > 0 && (data.selectedTagIds.length > 0 || data.stars.length > 0 || data.favOnly || data.hideRead)}
 					No works match your search and filters.
 				{:else if data.q.trim().length > 0}
 					No works match your search.
@@ -344,6 +345,7 @@
 			matchAllCategories={data.matchAllCategories}
 			stars={data.stars}
 			favOnly={data.favOnly}
+			hideRead={data.hideRead}
 			personalFilters
 		/>
 	</div>

@@ -10,6 +10,7 @@ type Row = {
 	chapter_count: number;
 	word_count: number | null;
 	favorited_at: string | null;
+	read_at: string | null;
 	chapters_updated_at: string | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
@@ -164,6 +165,10 @@ function rowToWork(r: Row) {
 		word_count: r.word_count,
 		is_favorite: r.favorited_at !== null,
 		favorited_at: r.favorited_at,
+		// Manual "read" mark (you-layer, #66) — projected onto library rows so a
+		// read fic shows a "Read" badge, and to keep the shape symmetric with the
+		// detail feed. Independent of Continue-Reading finished state.
+		read_at: r.read_at,
 		// Personal star rating (you-layer): 1–5 when rated, null = unrated.
 		// Drives the library-row star display; the deferred sort/filter
 		// fast-follow reads the same projected value.
@@ -202,7 +207,7 @@ function rowToWork(r: Row) {
  */
 const SELECT_COLUMNS = `
   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-  w.favorited_at, w.chapters_updated_at,
+  w.favorited_at, w.read_at, w.chapters_updated_at,
   rp.last_chapter, rp.last_scroll_y,
   rp.max_read_chapter AS last_max_read_chapter,
   rp.dismissed_at AS last_dismissed_at,
@@ -310,6 +315,7 @@ export const GET: RequestHandler = ({ url }) => {
 	const ftsQuery = sanitizeFtsQuery(url.searchParams.get('q'));
 	const stars = parseStars(url.searchParams.get('stars'));
 	const favOnly = url.searchParams.get('fav') === '1';
+	const hideRead = url.searchParams.get('hide_read') === '1';
 	const sort = parseSort(url.searchParams.get('sort'));
 	const paginate = url.searchParams.get('paginate') !== 'false';
 	const page = parsePage(url.searchParams.get('page'));
@@ -356,12 +362,17 @@ export const GET: RequestHandler = ({ url }) => {
 	//   stars → rt.stars IN (…) — exact multi-select, OR-within (Step 1c);
 	//           unrated rt.stars is NULL → never in the list, so it's excluded
 	//   fav   → w.favorited_at IS NOT NULL (favorites-only)
+	//   hide_read → w.read_at IS NULL (exclude works manually marked read, #66 —
+	//               keys off the manual flag, NOT the CR-finished state)
 	if (stars.length > 0) {
 		whereParts.push(`rt.stars IN (${stars.map(() => '?').join(', ')})`);
 		whereParams.push(...stars);
 	}
 	if (favOnly) {
 		whereParts.push('w.favorited_at IS NOT NULL');
+	}
+	if (hideRead) {
+		whereParts.push('w.read_at IS NULL');
 	}
 
 	const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';

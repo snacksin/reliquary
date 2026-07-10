@@ -77,6 +77,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		.map((t) => Number.parseInt(t.trim(), 10))
 		.filter((n) => Number.isInteger(n) && n >= 1 && n <= 5);
 	const favOnly = url.searchParams.get('fav') === '1';
+	const hideRead = url.searchParams.get('hide_read') === '1';
 
 	// Three fetches, parallelized:
 	//   - getTags(): drives the right-column filter sidebar
@@ -98,7 +99,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 			perPage,
 			sort,
 			stars,
-			fav: favOnly
+			fav: favOnly,
+			hideRead
 		})
 	]);
 
@@ -112,6 +114,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		sort,
 		stars,
 		favOnly,
+		hideRead,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page
 	};

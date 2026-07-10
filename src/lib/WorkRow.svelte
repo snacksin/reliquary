@@ -47,6 +47,9 @@
 			{#if work.is_favorite}
 				<Heart class="fav-indicator" size={14} fill="currentColor" aria-label="Favorited" />
 			{/if}
+			{#if work.read_at}
+				<span class="read-badge">Read</span>
+			{/if}
 		</strong>
 		<span class="meta">{showAuthor ? `by ${work.author} · ` : ''}{chapterLabel}</span>
 		{#if work.rating}
@@ -181,5 +184,23 @@
 		color: var(--reader-heart);
 		margin-left: 0.4rem;
 		vertical-align: -2px;
+	}
+	/* Manual "Read" mark badge (you-layer, #66) — a subtle, theme-aware pill next
+	   to the title on read fics. Reset font-weight (it sits inside the bold
+	   title) so it reads as a quiet marker, not part of the title. Keys off the
+	   manual read_at flag, independent of Continue-Reading finished state. */
+	.read-badge {
+		display: inline-block;
+		margin-left: 0.5rem;
+		padding: 1px 6px;
+		border: 1px solid var(--reader-border);
+		border-radius: 999px;
+		background: var(--reader-card-bg);
+		color: var(--reader-muted);
+		font-size: 0.62rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		vertical-align: middle;
 	}
 </style>
