@@ -11,6 +11,8 @@
 		stars?: number[];
 		/** You-layer Step 1b: favorites-only filter. */
 		favOnly?: boolean;
+		/** You-layer: "Hide read" — exclude works manually marked read (#66). */
+		hideRead?: boolean;
 		/**
 		 * Render the you-layer favorites + star-rating filter sections. Set by
 		 * the library only — the author-detail page reuses this sidebar for AO3
@@ -25,13 +27,14 @@
 		matchAllCategories,
 		stars = [],
 		favOnly = false,
+		hideRead = false,
 		personalFilters = false
 	}: Props = $props();
 
 	// How many narrowing filters are active — drives the "Clear (N)" affordance.
 	// Each selected star counts like a selected tag (multi-select).
 	const activeFilterCount = $derived(
-		selectedIds.length + stars.length + (favOnly ? 1 : 0)
+		selectedIds.length + stars.length + (favOnly ? 1 : 0) + (hideRead ? 1 : 0)
 	);
 
 	/**
@@ -178,6 +181,12 @@
 		pushFilterParam((p) => (favOnly ? p.delete('fav') : p.set('fav', '1')));
 	}
 
+	// "Hide read" — exclude works with a manual read mark (read_at). Same
+	// presence-toggle idiom as favorites; server adds `read_at IS NULL`.
+	function toggleHideRead() {
+		pushFilterParam((p) => (hideRead ? p.delete('hide_read') : p.set('hide_read', '1')));
+	}
+
 	/**
 	 * Clear every narrowing filter — tags, match-all, rating, favorites — in
 	 * one shot. Deliberately preserves the search `q`, sort, and per_page
@@ -190,6 +199,7 @@
 			p.delete('match_all');
 			p.delete('stars');
 			p.delete('fav');
+			p.delete('hide_read');
 		});
 	}
 </script>
@@ -204,14 +214,18 @@
 		{/if}
 	</header>
 
-	<!-- You-layer Step 1b: favorites-only + star-rating filters (library only).
-	     Sit above the AO3 tag categories; compose with everything below via the
-	     URL. Hidden on the author-detail reuse of this sidebar. -->
+	<!-- You-layer: favorites-only + hide-read + star-rating filters (library
+	     only). Sit above the AO3 tag categories; compose with everything below
+	     via the URL. Hidden on the author-detail reuse of this sidebar. -->
 	{#if personalFilters}
 		<section class="filter-section special-filter">
 			<label class="fav-toggle">
 				<input type="checkbox" checked={favOnly} onchange={toggleFavOnly} />
 				<span>Favorites only</span>
+			</label>
+			<label class="fav-toggle">
+				<input type="checkbox" checked={hideRead} onchange={toggleHideRead} />
+				<span>Hide read</span>
 			</label>
 		</section>
 
@@ -336,6 +350,10 @@
 	.fav-toggle input[type='checkbox'] {
 		accent-color: var(--reader-fg);
 		flex: 0 0 auto;
+	}
+	/* Stacked boolean toggles (Favorites only / Hide read) get a little gap. */
+	.fav-toggle + .fav-toggle {
+		margin-top: 6px;
 	}
 	.special-label {
 		font-size: 0.85rem;

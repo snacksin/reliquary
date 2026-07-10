@@ -61,9 +61,9 @@ export type Work = {
 	 * Manual "read" mark (you-layer foundation): non-null = the user marked
 	 * this work read at that timestamp; null/absent = unread. Set ONLY via
 	 * POST/DELETE /api/works/[id]/read — fully decoupled from reading
-	 * progress / Continue Reading (see migrations/0018_read_at.sql). Only
-	 * present on the work-detail response this round; the library
-	 * badge/filter that would carry it into the listing endpoints is deferred.
+	 * progress / Continue Reading (see migrations/0018_read_at.sql). Projected
+	 * onto BOTH the library-list feed (drives the row "Read" badge + the "Hide
+	 * read" filter) and the work-detail feed.
 	 */
 	read_at?: string | null;
 	/**
@@ -111,6 +111,8 @@ type ListOpts = {
 	stars?: number[];
 	/** Favorites-only filter: keep only favorited works. */
 	fav?: boolean;
+	/** "Hide read" filter: exclude works manually marked read (read_at set). */
+	hideRead?: boolean;
 };
 
 function buildListParams(opts: ListOpts | undefined): URLSearchParams {
@@ -131,6 +133,7 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	if (opts?.sort && opts.sort !== 'added') search.set('sort', opts.sort);
 	if (opts?.stars && opts.stars.length > 0) search.set('stars', opts.stars.join(','));
 	if (opts?.fav) search.set('fav', '1');
+	if (opts?.hideRead) search.set('hide_read', '1');
 	return search;
 }
 
