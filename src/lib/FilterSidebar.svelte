@@ -1,18 +1,26 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import type { TagCategory, TagGroups } from '$lib/api';
+	import type { FilterCategory, PersonalTagVocabItem, TagGroups } from '$lib/api';
 
 	type Props = {
 		tags: TagGroups;
 		selectedIds: number[];
-		matchAllCategories: TagCategory[];
+		matchAllCategories: FilterCategory[];
 		/** You-layer Step 1c: exact star-rating multi-select (1–5 values). */
 		stars?: number[];
 		/** You-layer Step 1b: favorites-only filter. */
 		favOnly?: boolean;
 		/** You-layer: "Hide read" — exclude works manually marked read (#66). */
 		hideRead?: boolean;
+		/**
+		 * You-layer Private tags: the personal-tag vocabulary with live-work
+		 * counts, rendered as a "My Tags" section that filters exactly like an
+		 * AO3 category (include checkboxes + match-all; ids ride the same
+		 * `tags=` param). Library-only — the author-detail page doesn't pass it,
+		 * so its sidebar stays AO3-only.
+		 */
+		personalTags?: PersonalTagVocabItem[];
 		/**
 		 * Render the you-layer favorites + star-rating filter sections. Set by
 		 * the library only — the author-detail page reuses this sidebar for AO3
@@ -28,6 +36,7 @@
 		stars = [],
 		favOnly = false,
 		hideRead = false,
+		personalTags = undefined,
 		personalFilters = false
 	}: Props = $props();
 
@@ -39,20 +48,34 @@
 
 	/**
 	 * Display order (matches DESIGN.md §7's filter sidebar; mirrors AO3's
-	 * own preface block order). Drives both the section sequence and the
-	 * per-category labels.
+	 * own preface block order, with "My Tags" — the personal category —
+	 * after the freeform tags per §7). Drives both the section sequence
+	 * and the per-category labels.
 	 */
-	const CATEGORIES: { key: TagCategory; label: string }[] = [
+	const CATEGORIES: { key: FilterCategory; label: string }[] = [
 		{ key: 'rating', label: 'Rating' },
 		{ key: 'warning', label: 'Archive Warning' },
 		{ key: 'category', label: 'Category' },
 		{ key: 'fandom', label: 'Fandom' },
 		{ key: 'relationship', label: 'Relationship' },
 		{ key: 'character', label: 'Character' },
-		{ key: 'freeform', label: 'Additional Tags' }
+		{ key: 'freeform', label: 'Additional Tags' },
+		{ key: 'personal', label: 'My Tags' }
 	];
 
-	function expandedKey(cat: TagCategory): string {
+	/**
+	 * Per-section tag feed. The seven AO3 sections read from the /api/tags
+	 * groups; "My Tags" reads from the separate personal-tag vocabulary (and
+	 * renders only when the page passes it — the author-detail sidebar
+	 * doesn't). PersonalTagVocabItem is shape-compatible with Tag here
+	 * ({id, name, count} is all the section markup uses).
+	 */
+	function sectionTags(cat: FilterCategory): { id: number; name: string; count: number }[] {
+		if (cat === 'personal') return personalTags ?? [];
+		return tags[cat] ?? [];
+	}
+
+	function expandedKey(cat: FilterCategory): string {
 		return `prefs:filter:expanded:${cat}`;
 	}
 
@@ -63,14 +86,15 @@
 	 * toggle writes back to localStorage so the layout sticks across
 	 * reloads.
 	 */
-	let expanded: Record<TagCategory, boolean> = $state({
+	let expanded: Record<FilterCategory, boolean> = $state({
 		rating: false,
 		warning: false,
 		category: false,
 		fandom: false,
 		relationship: false,
 		character: false,
-		freeform: false
+		freeform: false,
+		personal: false
 	});
 
 	$effect(() => {
@@ -92,7 +116,7 @@
 		// loop; the localStorage write path is the toggle handler.
 	});
 
-	function toggleExpand(cat: TagCategory) {
+	function toggleExpand(cat: FilterCategory) {
 		expanded[cat] = !expanded[cat];
 		if (typeof window !== 'undefined') {
 			localStorage.setItem(expandedKey(cat), String(expanded[cat]));
@@ -103,7 +127,7 @@
 		return selectedIds.includes(id);
 	}
 
-	function isMatchAll(cat: TagCategory): boolean {
+	function isMatchAll(cat: FilterCategory): boolean {
 		return matchAllCategories.includes(cat);
 	}
 
@@ -118,7 +142,7 @@
 	 * longer exists (the server clamps but the URL would be lying),
 	 * and a filter that grows it should always re-anchor at the top.
 	 */
-	function pushFilterState(nextTags: number[], nextMatchAll: TagCategory[]) {
+	function pushFilterState(nextTags: number[], nextMatchAll: FilterCategory[]) {
 		const params = new URLSearchParams(page.url.searchParams);
 		if (nextTags.length > 0) params.set('tags', nextTags.join(','));
 		else params.delete('tags');
@@ -149,7 +173,7 @@
 	 * Independent per category — `match_all=fandom` doesn't affect
 	 * Freeform's OR-within behavior, and vice versa.
 	 */
-	function toggleMatchAll(cat: TagCategory) {
+	function toggleMatchAll(cat: FilterCategory) {
 		const next = isMatchAll(cat)
 			? matchAllCategories.filter((c) => c !== cat)
 			: [...matchAllCategories, cat];
@@ -249,7 +273,7 @@
 	{/if}
 
 	{#each CATEGORIES as { key, label } (key)}
-		{@const tagList = tags[key] ?? []}
+		{@const tagList = sectionTags(key)}
 		{#if tagList.length > 0}
 			<section class="filter-section">
 				<button

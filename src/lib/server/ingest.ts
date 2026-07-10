@@ -387,7 +387,17 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		const stampEdited = db.prepare(
 			`UPDATE chapters SET last_edited_at = CURRENT_TIMESTAMP WHERE id = ?`
 		);
-		const deleteWorkTags = db.prepare(`DELETE FROM work_tags WHERE work_id = ?`);
+		// Personal tags (you-layer) live in the SAME work_tags table under
+		// category='personal', but are user-authored, never parsed from the
+		// EPUB — so the re-ingest rewrite must never touch them. Scoping the
+		// delete to non-personal links is what lets a WIP update / duplicate
+		// re-upload / restore-via-re-upload preserve your tags (same
+		// preserved-data class as favorites/ratings/notes).
+		const deleteWorkTags = db.prepare(
+			`DELETE FROM work_tags
+			  WHERE work_id = ?
+			    AND tag_id NOT IN (SELECT id FROM tags WHERE category = 'personal')`
+		);
 
 		try {
 			db.transaction(() => {
@@ -436,8 +446,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 					if (!incomingNumbers.has(ex.number)) deleteChapter.run(ex.id);
 				}
 
-				// Rewrite ONLY this work's work_tags. upsertTag keeps shared
-				// tags rows (and thus tag_aliases edges + hide flags) intact.
+				// Rewrite ONLY this work's AO3-parsed work_tags (personal links
+				// survive — the delete is category-scoped). upsertTag keeps
+				// shared tags rows (and thus tag_aliases edges + hide flags)
+				// intact.
 				deleteWorkTags.run(finalId);
 				for (const tag of parsed.tags) {
 					const row = upsertTag.get(tag.category, tag.name);

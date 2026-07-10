@@ -17,6 +17,7 @@
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
 	import NotesEditor from '$lib/NotesEditor.svelte';
+	import WorkPersonalTags from '$lib/WorkPersonalTags.svelte';
 	import { Heart, Star } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -419,6 +420,17 @@
 	     id so it remounts (re-seeds its baseline) when navigating between fics. -->
 	{#key data.work.id}
 		<NotesEditor workId={data.work.id} note={data.work.note ?? null} />
+	{/key}
+
+	<!-- Personal tags (you-layer Private tags) — "My tags" chips + add
+	     combobox, between Notes and the Tags & metadata link. Keyed like the
+	     notes editor so the seed refreshes when navigating between fics. -->
+	{#key data.work.id}
+		<WorkPersonalTags
+			workId={data.work.id}
+			tags={data.work.personal_tags ?? []}
+			vocab={data.personalTagVocab}
+		/>
 	{/key}
 
 	{#if hasPreface}

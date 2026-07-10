@@ -118,6 +118,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		);
 	}
 
+	// Personal tags (you-layer Private tags) stay out of the alias system this
+	// round. No UI path reaches here with one (the /tags page feed excludes the
+	// category); this closes the direct-API hole. Same-category above means one
+	// check covers both ends.
+	if (parent.category === 'personal') {
+		throw error(400, 'personal tags cannot participate in aliases');
+	}
+
 	// Cycle check. Walk down from the proposed alias's subtree and look
 	// for the proposed parent. If we find it, adding this edge would
 	// close a cycle. Uses the same WITH RECURSIVE shape as the filter

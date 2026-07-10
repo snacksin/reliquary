@@ -1,5 +1,11 @@
 import type { PageLoad } from './$types';
-import { listWorks, listAllWorks, getTags, type TagCategory } from '$lib/api';
+import {
+	listWorks,
+	listAllWorks,
+	getTags,
+	getPersonalTags,
+	type FilterCategory
+} from '$lib/api';
 
 /**
  * Parse the `tags` query param (comma-separated tag IDs). Same shape as
@@ -17,14 +23,18 @@ function parseTagIds(raw: string | null): number[] {
 	return [...ids];
 }
 
-const KNOWN_CATEGORIES = new Set<TagCategory>([
+// `personal` (you-layer Private tags) is a first-class match-all category —
+// the "My Tags" sidebar section carries the same AND-within toggle as the
+// seven AO3 sections.
+const KNOWN_CATEGORIES = new Set<FilterCategory>([
 	'rating',
 	'warning',
 	'category',
 	'fandom',
 	'relationship',
 	'character',
-	'freeform'
+	'freeform',
+	'personal'
 ]);
 
 /**
@@ -33,12 +43,12 @@ const KNOWN_CATEGORIES = new Set<TagCategory>([
  * match the work). Same validation as the server: drop unknown names,
  * lowercase, dedupe.
  */
-function parseMatchAll(raw: string | null): TagCategory[] {
+function parseMatchAll(raw: string | null): FilterCategory[] {
 	if (!raw) return [];
-	const cats = new Set<TagCategory>();
+	const cats = new Set<FilterCategory>();
 	for (const token of raw.split(',')) {
 		const c = token.trim().toLowerCase();
-		if (KNOWN_CATEGORIES.has(c as TagCategory)) cats.add(c as TagCategory);
+		if (KNOWN_CATEGORIES.has(c as FilterCategory)) cats.add(c as FilterCategory);
 	}
 	return [...cats];
 }
@@ -79,8 +89,11 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	const favOnly = url.searchParams.get('fav') === '1';
 	const hideRead = url.searchParams.get('hide_read') === '1';
 
-	// Three fetches, parallelized:
-	//   - getTags(): drives the right-column filter sidebar
+	// Four fetches, parallelized:
+	//   - getTags(): drives the right-column filter sidebar's AO3 sections
+	//   - getPersonalTags(): drives its "My Tags" section (own feed — the
+	//     personal vocabulary never rides /api/tags, which is what keeps it
+	//     out of AO3 groups/counts and the /tags management page)
 	//   - listAllWorks(): unfiltered, drives Continue Reading + Favorites
 	//     (those lists must surface in-progress / favorited works
 	//     regardless of the current tag filter or search query, and
@@ -88,8 +101,9 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	//     subsets).
 	//   - listWorks({ tags, matchAll, q, page, perPage }): server-
 	//     filtered + searched + paginated, drives the middle column.
-	const [tagGroups, allWorks, filteredPage] = await Promise.all([
+	const [tagGroups, personalTags, allWorks, filteredPage] = await Promise.all([
 		getTags(fetch),
+		getPersonalTags(fetch),
 		listAllWorks(fetch),
 		listWorks(fetch, {
 			tags: selectedTagIds,
@@ -108,6 +122,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		works: allWorks,
 		filteredPage,
 		tagGroups,
+		personalTags,
 		selectedTagIds,
 		matchAllCategories,
 		q,

@@ -341,6 +341,7 @@
 		<SearchInput q={data.q} />
 		<FilterSidebar
 			tags={data.tagGroups}
+			personalTags={data.personalTags}
 			selectedIds={data.selectedTagIds}
 			matchAllCategories={data.matchAllCategories}
 			stars={data.stars}
