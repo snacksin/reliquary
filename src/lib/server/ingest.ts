@@ -326,6 +326,16 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		};
 		const archives: ArchiveEntry[] = [];
 
+		// Cover precedence (Cover Art Part A): a manually-set cover ALWAYS
+		// survives a re-upload — its file must ride the dir swap like
+		// _history does. Extracted ('epub') covers instead track the incoming
+		// EPUB: re-pointed at the new parse's cover, or CLEARED when the new
+		// upload has none (the old extracted file won't exist post-swap).
+		const existingCover = db
+			.prepare(`SELECT cover_path, cover_source FROM works WHERE id = ?`)
+			.get(finalId) as { cover_path: string | null; cover_source: string | null };
+		const keepManualCover = existingCover.cover_source === 'manual';
+
 		try {
 			writeWorkFiles(stagingDir, chapters, parsed.images);
 
@@ -336,6 +346,16 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			const stagingHistoryDir = join(stagingDir, '_history');
 			if (existsSync(existingHistoryDir)) {
 				cpSync(existingHistoryDir, stagingHistoryDir, { recursive: true });
+			}
+
+			// Carry a manual cover file forward (same reasoning as _history).
+			// cover_path is cwd-relative under finalDir; re-root it to staging.
+			if (keepManualCover && existingCover.cover_path) {
+				const coverFile = existingCover.cover_path.split('/').pop() ?? '';
+				const src = join(finalDir, coverFile);
+				if (coverFile && existsSync(src)) {
+					cpSync(src, join(stagingDir, coverFile));
+				}
 			}
 
 			for (const inc of chapters) {
@@ -385,6 +405,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			       chapters_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE chapters_updated_at END
 			 WHERE id = ?`
 		);
+		// Cover columns are deliberately NOT in updateWork: they follow the
+		// precedence rule (manual wins), not the metadata refresh.
+		const setCover = db.prepare(`UPDATE works SET cover_path = ?, cover_source = ? WHERE id = ?`);
 		const updateChapter = db.prepare(
 			`UPDATE chapters SET title = ?, content_path = ?, kind = ?, content_hash = ? WHERE id = ?`
 		);
@@ -476,6 +499,17 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// Author Identity Part A: refresh the byline author rows.
 				// work_authors is ingest-owned, so a full rewrite is safe.
 				syncWorkAuthors(db, finalId, workAuthors);
+
+				// Cover Art Part A: extracted covers track the incoming EPUB;
+				// manual covers are untouchable (file already carried into
+				// staging above). A coverless re-drop CLEARS a prior extracted
+				// cover — its file is gone post-swap either way.
+				if (!keepManualCover) {
+					const newCoverPath = parsed.coverFilename
+						? join(finalDir, 'images', parsed.coverFilename)
+						: null;
+					setCover.run(newCoverPath, newCoverPath ? 'epub' : null, finalId);
+				}
 			})();
 		} catch (e) {
 			console.error(`[ingest] DB update failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
@@ -522,9 +556,13 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		throw new IngestError('Failed to write work files', 'write', { cause: e });
 	}
 
+	// Cover Art Part A: the extracted cover file is already on disk (it's a
+	// member of parsed.images written by writeWorkFiles above) — cover_path
+	// just points at it, cwd-relative like every content_path.
+	const coverPath = parsed.coverFilename ? join(workDir, 'images', parsed.coverFilename) : null;
 	const insertWork = db.prepare(
-		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source, cover_path, cover_source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
@@ -542,7 +580,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				null,
 				sourceUrl,
 				contentHash,
-				source
+				source,
+				coverPath,
+				coverPath ? 'epub' : null
 			);
 			for (const ch of parsed.chapters) {
 				// Stamp per-chapter content_hash from creation so future

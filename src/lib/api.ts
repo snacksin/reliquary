@@ -98,7 +98,40 @@ export type Work = {
 	 * `author` string for display. Ingest-owned; never user-edited.
 	 */
 	authors?: WorkAuthor[];
+	/**
+	 * Cover Art Part A (DESIGN §6.19): whether this work has cover art
+	 * (manual upload or EPUB-extracted), plus a cache-bust token (the stored
+	 * file's basename — the disk path never leaves the server). Render via
+	 * `coverUrl(work)`; falsy/absent → the initial-glyph placeholder that has
+	 * held the slot since M1.
+	 */
+	has_cover?: boolean;
+	cover_v?: string | null;
 };
+
+/** The cover image URL for a work (versioned so replacements bypass caches). */
+export function coverUrl(work: Pick<Work, 'id' | 'cover_v'>): string {
+	return `/api/works/${work.id}/cover?v=${encodeURIComponent(work.cover_v ?? '')}`;
+}
+
+/** Upload a manual cover (PNG/JPG ≤10 MB). Always wins over extraction. */
+export async function uploadCover(
+	workId: string,
+	file: File,
+	fetch: Fetch
+): Promise<{ cover_v: string }> {
+	const fd = new FormData();
+	fd.set('file', file);
+	const res = await fetch(`/api/works/${workId}/cover`, { method: 'PUT', body: fd });
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Clear the cover back to the placeholder (idempotent). */
+export async function removeCover(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/cover`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
 
 /** One parsed byline author: AO3 account + pseud (null when unpseuded). */
 export type WorkAuthor = { account: string; pseud: string | null };

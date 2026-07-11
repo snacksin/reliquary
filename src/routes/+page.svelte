@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page as pageState } from '$app/state';
-	import { uploadEpub, removeProgress, type Work } from '$lib/api';
+	import { uploadEpub, removeProgress, coverUrl, type Work } from '$lib/api';
 	import { inContinueReading, maxRead, resumeChapter, continueHref, crSortKey } from '$lib/reading';
 	import BulkUploadButton from '$lib/BulkUploadButton.svelte';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
@@ -233,7 +233,11 @@
 						<li class="side-card">
 							<a href={continueHref(work)} class="side-card-link">
 								<div class="side-cover" aria-hidden="true">
-									<span class="side-cover-glyph">{glyph(work)}</span>
+									{#if work.has_cover}
+										<img class="side-cover-img" src={coverUrl(work)} alt="" loading="lazy" />
+									{:else}
+										<span class="side-cover-glyph">{glyph(work)}</span>
+									{/if}
 								</div>
 								<div class="side-card-text">
 									<strong>{work.title}</strong>
@@ -261,7 +265,11 @@
 						<li class="side-card">
 							<a href="/works/{work.id}" class="side-card-link">
 								<div class="side-cover" aria-hidden="true">
-									<span class="side-cover-glyph">{glyph(work)}</span>
+									{#if work.has_cover}
+										<img class="side-cover-img" src={coverUrl(work)} alt="" loading="lazy" />
+									{:else}
+										<span class="side-cover-glyph">{glyph(work)}</span>
+									{/if}
 								</div>
 								<div class="side-card-text">
 									<strong>{work.title}</strong>
@@ -604,6 +612,13 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+	.side-cover-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 3px;
+		display: block;
 	}
 	.side-cover-glyph {
 		font-family: Georgia, serif;

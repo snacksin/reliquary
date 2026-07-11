@@ -22,6 +22,7 @@ type WorkRow = {
 	favorited_at: string | null;
 	chapters_updated_at: string | null;
 	position: number | null;
+	cover_path: string | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
 	last_max_read_chapter: number | null;
@@ -44,7 +45,7 @@ export const GET: RequestHandler = ({ params }) => {
 	const rows = db
 		.prepare(
 			`SELECT w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			        w.favorited_at, w.chapters_updated_at, sw.position,
+			        w.favorited_at, w.chapters_updated_at, w.cover_path, sw.position,
 			        rp.last_chapter, rp.last_scroll_y,
 			        rp.max_read_chapter AS last_max_read_chapter,
 			        rp.dismissed_at AS last_dismissed_at,
@@ -67,6 +68,11 @@ export const GET: RequestHandler = ({ params }) => {
 		is_favorite: r.favorited_at !== null,
 		favorited_at: r.favorited_at,
 		chapters_updated_at: r.chapters_updated_at,
+		// Cover Art Part A: covers render wherever the slot exists — the
+		// series page uses the shared WorkRow, so project presence + the
+		// cache-bust token here too (never the disk path).
+		has_cover: r.cover_path !== null,
+		cover_v: r.cover_path?.split('/').pop() ?? null,
 		// "Part N" in the series — the stored AO3 position (can be sparse:
 		// Part 3, Part 7), null for name-only series. Surfaced for the
 		// series-detail page's per-part label.
