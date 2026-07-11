@@ -88,6 +88,10 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		.filter((n) => Number.isInteger(n) && n >= 1 && n <= 5);
 	const favOnly = url.searchParams.get('fav') === '1';
 	const hideRead = url.searchParams.get('hide_read') === '1';
+	// Cover Art Part B: middle-column presentation — 'list' (default) or
+	// 'grid'. Pure client concern; never forwarded to /api/works (same
+	// query pipeline either way, different rendering).
+	const view = url.searchParams.get('view') === 'grid' ? 'grid' : 'list';
 
 	// Four fetches, parallelized:
 	//   - getTags(): drives the right-column filter sidebar's AO3 sections
@@ -130,6 +134,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		stars,
 		favOnly,
 		hideRead,
+		view,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page
 	};
