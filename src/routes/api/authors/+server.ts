@@ -8,11 +8,12 @@ import { getDb } from '$lib/server/db';
  * work count DESC, name ASC (case-insensitive) tiebreak. Powers the
  * /authors index.
  *
- * Author Identity Part A: "author" is the EFFECTIVE key — the parsed
- * primary ACCOUNT for AO3 works with byline rows, else the raw
- * `works.author` string (non-AO3, Anonymous). Same expression as the
- * author scopes in /api/works and /api/tags. A pseud-authored fic and an
- * unpseuded fic by the same account now group into one index entry.
+ * Author Identity Part A→B: "author" is the EFFECTIVE key — any ACCOUNT
+ * appearing at any byline position (Part B: a co-authored work counts on
+ * EVERY co-author's entry), else the raw `works.author` string (non-AO3,
+ * Anonymous). Same membership shape as the author scopes in /api/works
+ * and /api/tags. A pseud-authored fic and an unpseuded fic by the same
+ * account group into one index entry.
  *
  * Trashed works are excluded from both membership and the count.
  *
@@ -53,18 +54,26 @@ export const GET: RequestHandler = ({ url }) => {
 		params.push(...tagIds, tagIds.length);
 	}
 
-	// Effective author key resolved once in an inner select, then grouped /
-	// joined / filtered by name — keeps the COALESCE expression in one place.
+	// Part B membership: the inner derived table yields one (author_key,
+	// work) pair per author PER WORK — a co-authored work contributes to
+	// every co-author's entry (intended, controlled fan-out; DISTINCT
+	// collapses a work whose byline lists two pseuds of ONE account to a
+	// single pair). Works with no byline rows fall back to the raw
+	// works.author string; the two branches are disjoint by construction,
+	// so UNION ALL is safe.
 	const rows = db
 		.prepare(
 			`SELECT author_key AS name, COUNT(*) AS work_count, a.favorited_at AS favorited_at
 			   FROM (
-			     SELECT COALESCE(
-			       (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
-			       w.author
-			     ) AS author_key
-			      FROM works w
-			     WHERE w.trashed_at IS NULL
+			     SELECT DISTINCT wa.account AS author_key, w.id AS work_id
+			       FROM works w
+			       JOIN work_authors wa ON wa.work_id = w.id
+			      WHERE w.trashed_at IS NULL
+			     UNION ALL
+			     SELECT w.author AS author_key, w.id AS work_id
+			       FROM works w
+			      WHERE w.trashed_at IS NULL
+			        AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id)
 			   )
 			   LEFT JOIN authors a ON a.name = author_key
 			  WHERE 1=1${tagClause}

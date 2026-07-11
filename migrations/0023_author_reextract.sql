@@ -1,0 +1,25 @@
+-- Author Identity Part B amendment: one-shot phantom-co-author self-heal.
+--
+-- Part A/B's author extraction scanned the WHOLE summary/preface wrapper
+-- for rel="author" anchors — but AO3 EPUBs also carry such anchors (with
+-- perfectly valid /users/{x}/pseuds/{x} hrefs) in "Inspired by <work> by
+-- <author>" credit lines and gift-recipient links. Those parsed as phantom
+-- co-authors: giftees/inspirations got byline billing, their own author
+-- pages, and search matches (e.g. a gifted fic's recipient showing as
+-- co-author). The parser is now scoped to the byline div (where every REAL
+-- byline author lives — verified against the library's genuinely
+-- co-authored works), with an anchored URL-path check and a gift-syntax
+-- ("… for <a>") cut as defense-in-depth.
+--
+-- Libraries backfilled by the buggy scan hold phantom rows in BOTH
+-- work_authors and authors_fts (0022 populated the search table from the
+-- phantom-bearing rows). Both are ingest-owned and cheap to rebuild, so:
+-- wipe them here, and the SAME boot's author backfill
+-- (backfillAuthorIdentity phase 1 — it targets works with zero rows)
+-- re-extracts every AO3 work with the corrected parser, rewriting both
+-- tables through syncWorkAuthors. Second boot: 0 works, nothing to redo.
+-- Fresh libraries: both DELETEs are no-ops on just-created empty tables.
+-- No works-table column is touched — content_hash/works.author stay
+-- byte-identical through the heal.
+DELETE FROM work_authors;
+DELETE FROM authors_fts;

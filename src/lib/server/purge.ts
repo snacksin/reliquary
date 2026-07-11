@@ -53,6 +53,19 @@ export function purgeWork(db: Database, id: string): boolean {
 	const result = db.prepare('DELETE FROM works WHERE id = ?').run(id);
 	const deleted = result.changes > 0;
 
+	// Author Identity Part B: authors_fts is app-maintained (no triggers, and
+	// the FK cascade on work_authors can't clean a separate FTS table), so a
+	// hard purge drops the work's author-search row explicitly. An orphan here
+	// would be harmless (the search clause joins back to works by id) — this
+	// just keeps the index tidy. Guarded like the series cleanup below.
+	if (deleted) {
+		try {
+			db.prepare('DELETE FROM authors_fts WHERE work_id = ?').run(id);
+		} catch (e) {
+			console.error(`[purge] authors_fts cleanup failed for ${id}:`, e);
+		}
+	}
+
 	if (deleted && seriesIds.length > 0) {
 		try {
 			const hasMember = db.prepare('SELECT 1 FROM series_works WHERE series_id = ? LIMIT 1');
