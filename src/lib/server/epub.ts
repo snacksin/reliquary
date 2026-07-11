@@ -50,6 +50,16 @@ export type ParsedEpub = {
 	chapterCount: number;
 	images: ParsedImage[];
 	tags: ParsedTag[];
+	/**
+	 * Cover Art Part A: the filename (within `images`) of the EPUB's declared
+	 * cover, or null when none. Resolution: the OPF `<meta name="cover">`
+	 * manifest id (the EPUB2/Calibre idiom — the only cover signal epub2
+	 * surfaces; it keeps neither EPUB3's `properties="cover-image"` nor the
+	 * guide), else a cover-named extracted image. Always a member of `images`
+	 * (a declared-but-unpackaged cover resolves to null, never a dangling
+	 * name). Plays NO part in computeContentHash inputs.
+	 */
+	coverFilename: string | null;
 };
 
 /**
@@ -487,7 +497,9 @@ export function extractSeriesEntries(html: string): ParsedSeries[] {
 	while ((e = entryRe.exec(ddInner)) !== null) {
 		const position = Number.parseInt(e[1], 10);
 		const url = normalizeSeriesUrl(e[3]);
-		const name = decodeEntities(e[4].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+		const name = decodeEntities(e[4].replace(/<[^>]+>/g, ''))
+			.replace(/\s+/g, ' ')
+			.trim();
 		if (!name) continue;
 		const key = url ?? `name::${name.toLowerCase()}`;
 		if (seen.has(key)) continue;
@@ -551,10 +563,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 const EPUB_CALL_TIMEOUT_MS = 10_000;
 
 function rewriteImageSrcs(html: string, workId: string): string {
-	const re = new RegExp(
-		`(src|href)=(["'])${IMG_SENTINEL.replace(/\//g, '\\/')}([^"']+)`,
-		'g'
-	);
+	const re = new RegExp(`(src|href)=(["'])${IMG_SENTINEL.replace(/\//g, '\\/')}([^"']+)`, 'g');
 	return html.replace(re, (_match, attr, quote, path) => {
 		const filename = path.split('/').pop() || path;
 		return `${attr}=${quote}/api/works/${workId}/images/${filename}`;
@@ -755,12 +764,9 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// upload endpoint surfaces a 400 to the client. The known
 		// `linkparts.shift is not a function` bug on certain locked-fic
 		// AO3 EPUBs takes this path.
-		(book as unknown as { on: (e: string, cb: (e: unknown) => void) => void }).on(
-			'error',
-			() => {
-				/* swallowed — see comment above */
-			}
-		);
+		(book as unknown as { on: (e: string, cb: (e: unknown) => void) => void }).on('error', () => {
+			/* swallowed — see comment above */
+		});
 
 		const title = book.metadata.title?.trim() || 'Untitled';
 		const author = book.metadata.creator?.trim() || 'Unknown';
@@ -894,7 +900,7 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 
 		let chapterIndex = 0;
 		for (const c of chapters) {
-			if (c.kind === 'chapter') c.number = (chapterIndex += 1);
+			if (c.kind === 'chapter') c.number = chapterIndex += 1;
 		}
 
 		const chapterCount = chapters.filter((c) => c.kind === 'chapter').length;
@@ -938,8 +944,48 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			}
 		}
 
-		return { title, author, summary, chapters, chapterCount, images, tags };
+		// Cover identification (Cover Art Part A). The image is already IN
+		// `images` (extracted above by the existing pipeline) — this only
+		// decides which one is the cover. Ingest points works.cover_path at
+		// the written file; nothing here touches the hash inputs.
+		const coverFilename = resolveCoverFilename(
+			(book.metadata as { cover?: string }).cover,
+			(book.manifest ?? {}) as Record<string, { href?: string }>,
+			images
+		);
+
+		return { title, author, summary, chapters, chapterCount, images, tags, coverFilename };
 	} finally {
 		await unlink(tmpPath).catch(() => {});
 	}
+}
+
+/**
+ * Which extracted image is the cover?
+ *
+ * 1. The OPF `<meta name="cover" content="{id}">` manifest id — the EPUB2 /
+ *    Calibre idiom, and the only cover signal epub2 exposes (manifest items
+ *    lose EPUB3's `properties="cover-image"`, guide parsing is disabled).
+ * 2. Fallback: an extracted image whose basename is cover-named
+ *    ("cover.jpg", "book-cover.png", …) — in practice EPUB3 covers are
+ *    near-universally named this way.
+ *
+ * Only ever returns a member of `images`, so a declared-but-unpackaged
+ * cover (or an href pointing outside the extracted set) resolves to null
+ * rather than a dangling filename.
+ */
+function resolveCoverFilename(
+	coverId: string | undefined,
+	manifest: Record<string, { href?: string }>,
+	images: ParsedImage[]
+): string | null {
+	const have = new Set(images.map((i) => i.filename));
+	if (coverId && manifest[coverId]?.href) {
+		const declared = (manifest[coverId].href.split('/').pop() || '').trim();
+		if (declared && have.has(declared)) return declared;
+	}
+	const named = images.find((i) =>
+		/(^|[^a-z])cover([^a-z]|$)/i.test(i.filename.replace(/\.[a-z0-9]+$/i, ''))
+	);
+	return named?.filename ?? null;
 }

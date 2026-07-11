@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Heart, Star } from 'lucide-svelte';
 	import { summaryText, notePreview } from '$lib/rowText';
-	import { authorDisplay, type Work } from '$lib/api';
+	import { authorDisplay, coverUrl, type Work } from '$lib/api';
 
 	/**
 	 * One work row in a library-style list (library middle column +
@@ -41,8 +41,15 @@
 			>{#if part !== null}Part {part}{/if}</span
 		>
 	{/if}
+	<!-- Cover Art Part A: real cover when set (manual or extracted), the
+	     M1 glyph placeholder otherwise. object-fit: cover = the CSS 2:3
+	     auto-crop decision; alt="" — decorative, the title is adjacent. -->
 	<div class="cover-slot" aria-hidden="true">
-		<span class="cover-glyph">{glyph}</span>
+		{#if work.has_cover}
+			<img class="cover-img" src={coverUrl(work)} alt="" loading="lazy" />
+		{:else}
+			<span class="cover-glyph">{glyph}</span>
+		{/if}
 	</div>
 	<div class="library-row-text">
 		<strong>
@@ -207,6 +214,13 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+	.cover-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 4px;
+		display: block;
 	}
 	.cover-glyph {
 		font-family: Georgia, serif;

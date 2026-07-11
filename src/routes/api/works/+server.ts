@@ -21,6 +21,7 @@ type Row = {
 	note: string | null;
 	personal_tags: string;
 	authors: string;
+	cover_path: string | null;
 };
 
 /**
@@ -194,6 +195,11 @@ function rowToWork(r: Row) {
 		// client falls back to the raw works.author byline for those (and,
 		// per the Part A interim decision, for multi-author works too).
 		authors: JSON.parse(r.authors) as { account: string; pseud: string | null }[],
+		// Cover Art Part A: presence + cache-bust token (the stored file's
+		// basename). The disk path itself never leaves the server — the
+		// client renders /api/works/<id>/cover?v=<cover_v>.
+		has_cover: r.cover_path !== null,
+		cover_v: r.cover_path?.split('/').pop() ?? null,
 		// When this work last GREW its chapter count (update-in-place). The
 		// Continue Reading carousel sorts a resurfaced work by the later of
 		// this and its reading recency, so fresh chapters bump it up.
@@ -224,7 +230,7 @@ function rowToWork(r: Row) {
  */
 const SELECT_COLUMNS = `
   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-  w.favorited_at, w.read_at, w.chapters_updated_at,
+  w.favorited_at, w.read_at, w.chapters_updated_at, w.cover_path,
   rp.last_chapter, rp.last_scroll_y,
   rp.max_read_chapter AS last_max_read_chapter,
   rp.dismissed_at AS last_dismissed_at,

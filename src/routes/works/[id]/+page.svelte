@@ -13,6 +13,8 @@
 		clearRating,
 		daysUntilPurge,
 		authorName,
+		uploadCover,
+		removeCover,
 		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
@@ -33,7 +35,54 @@
 	afterNavigate((nav) => {
 		const from = nav.from?.url;
 		backHref = from && from.pathname === '/' ? from.pathname + from.search : '/';
+		// Reset the cover override when navigating between works — the next
+		// work's cover comes from its own load data.
+		pendingCover = undefined;
+		coverError = null;
 	});
+
+	// ─── Cover Art Part A: manual upload / remove ────────────────────
+	// `pendingCover` is the optimistic override (undefined = defer to load
+	// data; null = removed; string = the new cache-bust token) — the same
+	// pending-then-derived idiom as the star rating below. No invalidateAll:
+	// the server row changed, the local override covers the gap.
+	let pendingCover = $state<string | null | undefined>(undefined);
+	let coverBusy = $state(false);
+	let coverError = $state<string | null>(null);
+	let coverInputEl = $state<HTMLInputElement | null>(null);
+	const coverV = $derived(
+		pendingCover !== undefined ? pendingCover : (data.work.cover_v ?? null)
+	);
+
+	async function handleCoverPicked(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = ''; // allow re-picking the same file later
+		if (!file) return;
+		coverBusy = true;
+		coverError = null;
+		try {
+			const res = await uploadCover(data.work.id, file, fetch);
+			pendingCover = res.cover_v;
+		} catch (err) {
+			coverError = err instanceof Error ? err.message : 'Could not upload cover';
+		} finally {
+			coverBusy = false;
+		}
+	}
+
+	async function handleCoverRemove() {
+		coverBusy = true;
+		coverError = null;
+		try {
+			await removeCover(data.work.id, fetch);
+			pendingCover = null;
+		} catch (err) {
+			coverError = err instanceof Error ? err.message : 'Could not remove cover';
+		} finally {
+			coverBusy = false;
+		}
+	}
 
 	// Soft-trash state (M2.3 Step 5). When trashed, the page shows a
 	// banner with a Restore action instead of the Move-to-Trash button.
@@ -305,8 +354,45 @@
 		{/if}
 	{/if}
 	<div class="detail-header">
-		<div class="cover-slot" aria-hidden="true">
-			<span class="cover-glyph">{glyph}</span>
+		<!-- Cover Art Part A: the reserved slot renders the real cover
+		     (manual or extracted, CSS 2:3 auto-crop) with Set/Remove controls
+		     beneath — hidden on trashed works (read-only surface). Local
+		     state (coverV) updates optimistically, favorite-heart idiom. -->
+		<div class="cover-col">
+			<div class="cover-slot" aria-hidden="true">
+				{#if coverV !== null}
+					<img class="cover-img" src="/api/works/{data.work.id}/cover?v={coverV}" alt="" />
+				{:else}
+					<span class="cover-glyph">{glyph}</span>
+				{/if}
+			</div>
+			{#if !isTrashed}
+				<div class="cover-actions">
+					<input
+						bind:this={coverInputEl}
+						type="file"
+						accept="image/png,image/jpeg"
+						class="cover-file"
+						onchange={handleCoverPicked}
+					/>
+					<button
+						type="button"
+						class="cover-btn"
+						disabled={coverBusy}
+						onclick={() => coverInputEl?.click()}
+					>
+						{coverBusy ? 'Saving…' : coverV !== null ? 'Replace cover' : 'Set cover'}
+					</button>
+					{#if coverV !== null}
+						<button type="button" class="cover-btn" disabled={coverBusy} onclick={handleCoverRemove}>
+							Remove
+						</button>
+					{/if}
+				</div>
+				{#if coverError}
+					<p class="cover-error" role="alert">{coverError}</p>
+				{/if}
+			{/if}
 		</div>
 		<div class="detail-header-text">
 			<div class="title-row">
@@ -554,6 +640,57 @@
 		color: var(--reader-muted);
 		opacity: 0.55;
 		user-select: none;
+	}
+	/* Cover Art Part A — the cover column wraps the existing slot plus the
+	   Set/Replace/Remove controls beneath it; the slot itself is unchanged
+	   (no layout shift). The img is the CSS 2:3 auto-crop. */
+	.cover-col {
+		flex: 0 0 140px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.cover-col .cover-slot {
+		flex: 0 0 auto;
+	}
+	.cover-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 4px;
+		display: block;
+	}
+	.cover-file {
+		display: none;
+	}
+	.cover-actions {
+		display: flex;
+		gap: 6px;
+	}
+	.cover-btn {
+		flex: 1 1 0;
+		font: inherit;
+		font-size: 0.72rem;
+		padding: 3px 0;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: transparent;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.cover-btn:hover:not(:disabled) {
+		border-color: var(--reader-accent);
+		color: var(--reader-fg);
+	}
+	.cover-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.cover-error {
+		color: #b00;
+		font-size: 0.72rem;
+		margin: 0;
+		max-width: 140px;
 	}
 	.title-row {
 		display: flex;
