@@ -25,7 +25,11 @@
 	// account has ≥2 distinct pseud labels among its live works — a single
 	// (or default) pseud carries no extra information.
 	const showPseuds = $derived(data.pseuds.length >= 2);
-	const pseudTotal = $derived(data.pseuds.reduce((s, p) => s + p.count, 0));
+	// "All" shows the account's DISTINCT work count (the same number as the
+	// header, from /api/authors) — NOT the sum of per-pseud counts, which
+	// double-counts a work bylined under two pseuds of this one account
+	// (amendment: LA VOLPE counted once per pseud).
+	const pseudTotal = $derived(data.author.work_count);
 
 	// Push the pseud filter into the URL (single source of truth —
 	// bookmarkable, history-aware back like every other filter). Filter
@@ -123,14 +127,21 @@
 							All ({pseudTotal})
 						</button>
 						{#each data.pseuds as p (p.pseud)}
+							<!-- The base-account label (works published under the account's
+							     own name — pseud === account, or unpseuded URLs) is the
+							     DEFAULT identity, not a pseud of itself: it reads
+							     "as {account}" in a muted/italic pill so it can't be
+							     mistaken for a real pseud. Same ?pseud= filtering
+							     mechanics either way. -->
 							<button
 								type="button"
 								class="pseud-pill"
+								class:base={p.pseud === author.name}
 								class:active={data.pseud === p.pseud}
 								aria-pressed={data.pseud === p.pseud}
 								onclick={() => pushPseud(data.pseud === p.pseud ? null : p.pseud)}
 							>
-								{p.pseud} ({p.count})
+								{p.pseud === author.name ? `as ${p.pseud}` : p.pseud} ({p.count})
 							</button>
 						{/each}
 					</div>
@@ -248,6 +259,19 @@
 		border-color: var(--reader-accent);
 		color: var(--reader-bg);
 		font-weight: 600;
+	}
+	/* Base-account pill ("as {account}") — the default identity, not a real
+	   pseud: italic + dashed border + extra-muted at rest so it reads as a
+	   different kind of thing. When active it takes the standard accent fill
+	   (still italic) so the selected state stays unmistakable. */
+	.pseud-pill.base {
+		font-style: italic;
+		border-style: dashed;
+		color: var(--reader-muted);
+	}
+	.pseud-pill.base.active {
+		border-style: solid;
+		color: var(--reader-bg);
 	}
 	.back {
 		margin: 0 0 0.75rem;

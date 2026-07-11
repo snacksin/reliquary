@@ -54,10 +54,11 @@
 				<span class="read-badge">Read</span>
 			{/if}
 		</strong>
-		<!-- Author Identity Part A: AO3-style "pseud (account)" byline text.
-	     Unpseuded / non-AO3 / multi-author render byte-identical to today
-	     (authorDisplay falls back to the raw works.author). Text only — the
-	     whole row is already one <a> to the work, so no nested anchor. -->
+		<!-- Author Identity Part B: AO3-style byline text, ALL co-authors in
+	     byline order ("A, B (acct)"), from the stored work_authors links.
+	     Non-AO3 / Anonymous fall back to the raw works.author. Text only —
+	     the whole row is already one <a> to the work, so no nested anchor
+	     (the per-author links live on the detail page). -->
 	<span class="meta">{showAuthor ? `by ${authorDisplay(work)} · ` : ''}{chapterLabel}</span>
 		{#if work.rating}
 			<span class="row-rating" aria-label="Your rating: {work.rating} of 5 stars">

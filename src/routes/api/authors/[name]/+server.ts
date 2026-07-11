@@ -18,10 +18,11 @@ import { authorKeyExists } from '$lib/server/authors';
 
 /**
  * GET /api/authors/[name] — the author's saved note (null if none) plus the
- * account's "pseuds seen so far": distinct primary-author pseud labels over
- * this account's LIVE works, with per-pseud work counts (drives the author
- * page's pseud sub-filter). Unpseuded byline URLs label as the account name
- * itself. Empty for authors with no byline rows (non-AO3, Anonymous).
+ * account's "pseuds seen so far": distinct pseud labels over this account's
+ * byline rows at ANY position (Part B: co-authoring under a pseud counts) on
+ * LIVE works, with per-pseud work counts (drives the author page's pseud
+ * sub-filter). Unpseuded byline URLs label as the account name itself.
+ * Empty for authors with no byline rows (non-AO3, Anonymous).
  */
 export const GET: RequestHandler = ({ params }) => {
 	const db = getDb();
@@ -31,10 +32,10 @@ export const GET: RequestHandler = ({ params }) => {
 		| undefined;
 	const pseuds = db
 		.prepare(
-			`SELECT COALESCE(wa.pseud, wa.account) AS pseud, COUNT(*) AS count
+			`SELECT COALESCE(wa.pseud, wa.account) AS pseud, COUNT(DISTINCT wa.work_id) AS count
 			   FROM work_authors wa
 			   JOIN works w ON w.id = wa.work_id
-			  WHERE wa.position = 0 AND wa.account = ? AND w.trashed_at IS NULL
+			  WHERE wa.account = ? AND w.trashed_at IS NULL
 			  GROUP BY COALESCE(wa.pseud, wa.account)
 			  ORDER BY count DESC, pseud COLLATE NOCASE ASC`
 		)

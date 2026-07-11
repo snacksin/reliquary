@@ -333,22 +333,34 @@ const TAG_FILTER_CLAUSE = `w.id IN (
  * AND) is bound once per MATCH.
  */
 /**
- * The effective author key (Author Identity Part A): the parsed primary
- * account when the work has byline author rows (AO3 works), else the raw
- * `works.author` string (non-AO3 sources, Anonymous, deleted-author
- * bylines). Author pages group by this key; the same expression appears in
- * /api/tags' author scope and /api/authors' grouping so the three surfaces
- * can never disagree.
+ * Author-page membership (Author Identity Part B): a work belongs to an
+ * author key when that account appears at ANY byline position (co-authored
+ * works appear on EVERY co-author's page), else — for works with no byline
+ * rows (non-AO3, Anonymous, deleted-author) — when the raw `works.author`
+ * string matches. Written as EXISTS so a work matching via several byline
+ * rows still yields ONE result row: no join fan-out, `COUNT(*)` stays
+ * correct. Binds the author name TWICE. The same shape appears in
+ * /api/tags' author scope, /api/authors' grouping, and `authorKeyExists`
+ * so the surfaces can never disagree.
  */
-const AUTHOR_KEY = `COALESCE(
-  (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
-  w.author
+const AUTHOR_MEMBER_CLAUSE = `(
+  EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id AND wa.account = ?)
+  OR (w.author = ? AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id))
 )`;
 
+/**
+ * FTS search: works_fts (title/author/summary) ∪ notes_fts (note bodies) ∪
+ * authors_fts (ALL parsed byline authors — Part B; works_fts alone only
+ * knows the raw dc:creator byline, which recorded just the first co-author
+ * for most multi-author fics). Three separate tables, each left untouched
+ * by the others' features; the sanitized query is bound once per MATCH.
+ */
 const SEARCH_CLAUSE = `w.id IN (
   SELECT work_id FROM works_fts WHERE works_fts MATCH ?
   UNION
   SELECT work_id FROM notes_fts WHERE notes_fts MATCH ?
+  UNION
+  SELECT work_id FROM authors_fts WHERE authors_fts MATCH ?
 )`;
 
 export const GET: RequestHandler = ({ url }) => {
@@ -378,28 +390,28 @@ export const GET: RequestHandler = ({ url }) => {
 	// AND-composes here). No param needed.
 	whereParts.push('w.trashed_at IS NULL');
 
-	// Author Pages Part 1 → Author Identity Part A: optional author scope,
-	// now keyed on the EFFECTIVE author key — the parsed primary account
-	// when the work has byline author rows, else the raw works.author
-	// string (non-AO3 / Anonymous). Additive — ANDs with the trashed/tag/
-	// search clauses, so the author-detail middle column reuses this
-	// endpoint unchanged.
+	// Author Pages Part 1 → Author Identity Part B: optional author scope —
+	// membership at ANY byline position (co-authored works appear on every
+	// co-author's page), raw works.author fallback for works with no byline
+	// rows. Additive — ANDs with the trashed/tag/search clauses, so the
+	// author-detail middle column reuses this endpoint unchanged.
 	const author = url.searchParams.get('author');
 	if (author) {
-		whereParts.push(`${AUTHOR_KEY} = ?`);
-		whereParams.push(author);
+		whereParts.push(AUTHOR_MEMBER_CLAUSE);
+		whereParams.push(author, author);
 		// Per-pseud sub-filter (author page only — meaningless without the
-		// account scope, so it's gated on `author`). Matches the PRIMARY
-		// author's pseud; NULL-pseud rows are addressed by the account name
+		// account scope, so it's gated on `author`). Part B: matches THIS
+		// account's byline row at any position, so a co-author page's pseud
+		// pills work too. NULL-pseud rows are addressed by the account name
 		// itself (the client sends the label it displayed).
 		const pseud = url.searchParams.get('pseud');
 		if (pseud) {
 			whereParts.push(
 				`EXISTS (SELECT 1 FROM work_authors wa
-				          WHERE wa.work_id = w.id AND wa.position = 0
+				          WHERE wa.work_id = w.id AND wa.account = ?
 				            AND COALESCE(wa.pseud, wa.account) = ?)`
 			);
-			whereParams.push(pseud);
+			whereParams.push(author, pseud);
 		}
 	}
 
@@ -410,8 +422,8 @@ export const GET: RequestHandler = ({ url }) => {
 
 	if (ftsQuery) {
 		whereParts.push(SEARCH_CLAUSE);
-		// Bound twice — once per MATCH in the works_fts ∪ notes_fts clause.
-		whereParams.push(ftsQuery, ftsQuery);
+		// Bound three times — once per MATCH in works_fts ∪ notes_fts ∪ authors_fts.
+		whereParams.push(ftsQuery, ftsQuery, ftsQuery);
 	}
 
 	// You-layer rating/favorites filters — plain WHERE entries on aliases

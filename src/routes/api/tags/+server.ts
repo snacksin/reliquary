@@ -88,20 +88,21 @@ export const GET: RequestHandler = ({ url }) => {
 		whereClauses.push(`NOT ${hiddenExpr}`);
 	}
 
-	// Author Pages Part 1 → Author Identity Part A: optional author scope,
-	// keyed on the EFFECTIVE author key (parsed primary account when the
-	// work has byline rows, else raw works.author) — same expression as
-	// /api/works' author scope so the author page's sidebar and middle
-	// column can never disagree. Counts (and the join's liveness EXISTS)
-	// are restricted to that author's non-trashed works.
+	// Author Pages Part 1 → Author Identity Part B: optional author scope —
+	// membership at ANY byline position (co-authored works count on every
+	// co-author's page), raw works.author fallback for works with no byline
+	// rows. Same shape as /api/works' AUTHOR_MEMBER_CLAUSE so the author
+	// page's sidebar and middle column can never disagree. Counts (and the
+	// join's liveness EXISTS) are restricted to that author's non-trashed
+	// works. Binds the author name twice.
 	const author = url.searchParams.get('author');
 	const authorClause = author
-		? ` AND COALESCE(
-		      (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
-		      w.author
-		    ) = ?`
+		? ` AND (
+		      EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id AND wa.account = ?)
+		      OR (w.author = ? AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id))
+		    )`
 		: '';
-	const params: unknown[] = author ? [author] : [];
+	const params: unknown[] = author ? [author, author] : [];
 
 	// M2.3 Step 4: trashed works don't inflate sidebar counts. The join
 	// only matches work_tags whose work is live, so COUNT(wt.work_id)

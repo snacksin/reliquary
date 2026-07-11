@@ -12,8 +12,7 @@
 		setRating,
 		clearRating,
 		daysUntilPurge,
-		authorDisplay,
-		authorKeyOf,
+		authorName,
 		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
@@ -336,15 +335,22 @@
 					<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
 				</button>
 			</div>
-			<!-- Author Identity Part A: "pseud (account)" byline linking to the
-			     ACCOUNT's author page (the effective key the server groups by).
-			     Unpseuded / non-AO3 / multi-author fall back to the raw byline
-			     text; the link always targets the primary account's page. -->
+			<!-- Author Identity Part B: AO3-style byline with EVERY co-author its
+			     own link to that account's page ("A, B (acct)"), in byline order
+			     from the stored work_authors links (never dc:creator). Works with
+			     no parsed authors (non-AO3, Anonymous) keep the raw works.author
+			     text linking to its fallback author page, exactly as before. -->
 			<p class="author">
 				by
-				<a href="/authors/{encodeURIComponent(authorKeyOf(data.work))}"
-					>{authorDisplay(data.work)}</a
-				>
+				{#if data.work.authors?.length}
+					{#each data.work.authors as a, i (a.account + '\0' + (a.pseud ?? ''))}
+						{#if i > 0}{', '}{/if}<a href="/authors/{encodeURIComponent(a.account)}"
+							>{authorName(a)}</a
+						>
+					{/each}
+				{:else}
+					<a href="/authors/{encodeURIComponent(data.work.author)}">{data.work.author}</a>
+				{/if}
 			</p>
 			<div
 				class="rating-control"

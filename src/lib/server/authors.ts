@@ -48,21 +48,44 @@ function decodeSegment(seg: string): string {
 /**
  * Extract the byline authors from wrapper HTML, in byline order.
  *
- * Anchors are matched attribute-order-agnostically: any `<a …>` tag carrying
- * `rel="author"` contributes its href's `/users/{account}(/pseuds/{pseud})?`
- * path segments. Duplicate (account, pseud) pairs collapse to the first
- * occurrence so a byline repeated across the summary + preface wrappers
- * yields one row per author.
+ * Scoped to the `<div class="byline">` region(s): AO3 EPUB wrappers carry
+ * `rel="author"` anchors with perfectly valid `/users/{x}/pseuds/{x}` hrefs
+ * OUTSIDE the byline too — the "Inspired by <work> by <author>" credits and
+ * gift-recipient links — and a whole-document scan mistakes those for
+ * co-authors (the Part B amendment bug: giftees/inspirations became phantom
+ * co-authors with their own author pages). Real co-authored fics list every
+ * author INSIDE the one byline div ("by <a>A</a>, <a>B</a>" — verified
+ * against the library's genuinely co-authored works), so the div is both
+ * necessary and sufficient. Wrappers with no byline div at all (unknown
+ * EPUB shapes) fall back to the whole-document scan.
+ *
+ * Two extra guards, defense-in-depth:
+ *  - anchors after a `</a> for ` token are dropped (AO3 gift syntax is
+ *    "by A, B for C" — recipients always follow the authors);
+ *  - the href path must be EXACTLY /users/{account} or
+ *    /users/{account}/pseuds/{pseud} — any trailing segment (/gifts,
+ *    /works, …) disqualifies the anchor.
+ *
+ * Anchors are matched attribute-order-agnostically; duplicate
+ * (account, pseud) pairs collapse to the first occurrence so a byline
+ * repeated across the summary + preface wrappers yields one row per author.
  */
 export function extractWorkAuthors(html: string): WorkAuthor[] {
+	const bylines = [...html.matchAll(/<div[^>]*class="[^"]*byline[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
+	let scope = bylines.length ? bylines.map((m) => m[1]).join('\n') : html;
+	const giftCut = scope.indexOf('</a> for ');
+	if (giftCut !== -1) scope = scope.slice(0, giftCut + '</a>'.length);
+
 	const out: WorkAuthor[] = [];
 	const seen = new Set<string>();
-	for (const tag of html.matchAll(/<a\b[^>]*>/gi)) {
+	for (const tag of scope.matchAll(/<a\b[^>]*>/gi)) {
 		const attrs = tag[0];
 		if (!/\brel\s*=\s*["']author["']/i.test(attrs)) continue;
 		const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
 		if (!href) continue;
-		const m = /\/users\/([^/?"#]+)(?:\/pseuds\/([^/?"#]+))?/.exec(href);
+		// Anchored: nothing may follow the account/pseud segment but an
+		// optional trailing slash and the end of the path.
+		const m = /\/users\/([^/?"#]+)(?:\/pseuds\/([^/?"#]+))?\/?(?=[?#]|$)/.exec(href);
 		if (!m) continue;
 		const account = decodeSegment(m[1]).trim();
 		if (!account) continue;
@@ -76,10 +99,16 @@ export function extractWorkAuthors(html: string): WorkAuthor[] {
 }
 
 /**
- * Rewrite one work's author rows. work_authors is INGEST-OWNED (rows only
- * ever come from parsing), so unlike work_tags this is a full, unscoped
- * delete+rewrite. Statements are plain (not a transaction) so the ingest
- * write transactions can call this inline — same contract as syncWorkSeries.
+ * Rewrite one work's author rows + its authors_fts search row (Part B).
+ * work_authors is INGEST-OWNED (rows only ever come from parsing), so unlike
+ * work_tags this is a full, unscoped delete+rewrite. Statements are plain
+ * (not a transaction) so the ingest write transactions can call this inline
+ * — same contract as syncWorkSeries.
+ *
+ * authors_fts is maintained HERE (the single writer of work_authors) rather
+ * than by triggers: the table is one aggregated row per work over multi-row
+ * source data, so delete-then-reinsert in code is clearer than per-row
+ * trigger programs. purgeWork deletes the search row on hard delete.
  */
 export function syncWorkAuthors(db: Database, workId: string, authors: WorkAuthor[]): void {
 	db.prepare(`DELETE FROM work_authors WHERE work_id = ?`).run(workId);
@@ -87,27 +116,37 @@ export function syncWorkAuthors(db: Database, workId: string, authors: WorkAutho
 		`INSERT INTO work_authors (work_id, position, account, pseud) VALUES (?, ?, ?, ?)`
 	);
 	authors.forEach((a, i) => insert.run(workId, i, a.account, a.pseud));
+
+	// Search row: every account + pseud token, byline-ordered (matches the
+	// 0022 migration's one-shot population shape).
+	db.prepare(`DELETE FROM authors_fts WHERE work_id = ?`).run(workId);
+	if (authors.length > 0) {
+		const names = authors
+			.map((a) => (a.pseud && a.pseud !== a.account ? `${a.account} ${a.pseud}` : a.account))
+			.join(' ');
+		db.prepare(`INSERT INTO authors_fts (work_id, names) VALUES (?, ?)`).run(workId, names);
+	}
 }
 
 /**
  * Does any work (live or trashed) resolve to this author key? The shared
  * existence guard for the /api/authors/[name]/* endpoints (favorite / note /
- * tags), all keyed on the EFFECTIVE author key: the parsed primary account
- * when the work has byline rows, else the raw works.author string. Matches
- * the AUTHOR_KEY expression in /api/works so the guards and the listing can
- * never disagree.
+ * tags). Part B semantics: an author key is any account appearing at ANY
+ * byline position (co-authors are first-class — each is independently
+ * favoritable/notable/taggable), else the raw works.author string for works
+ * with no byline rows (non-AO3, Anonymous). Matches the membership clause in
+ * /api/works so the guards and the listings can never disagree.
  */
 export function authorKeyExists(db: Database, name: string): boolean {
 	return (
 		db
 			.prepare(
 				`SELECT 1 FROM works w
-				  WHERE COALESCE(
-				    (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
-				    w.author
-				  ) = ? LIMIT 1`
+				  WHERE EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id AND wa.account = ?)
+				     OR (w.author = ? AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id))
+				  LIMIT 1`
 			)
-			.get(name) !== undefined
+			.get(name, name) !== undefined
 	);
 }
 

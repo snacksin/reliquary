@@ -104,26 +104,27 @@ export type Work = {
 export type WorkAuthor = { account: string; pseud: string | null };
 
 /**
- * Byline display text (Author Identity Part A). Single parsed author →
- * AO3-style "pseud (account)" (or just the account when unpseuded / the
- * pseud IS the account name). No parsed authors (non-AO3, Anonymous) or
- * multiple (co-authored — Part B's display work) → the raw `works.author`
- * byline exactly as today (Allie's Q1 interim decision).
+ * One byline author's AO3-style display name: "pseud (account)", or just
+ * the account when unpseuded / the pseud IS the account name.
  */
-export function authorDisplay(work: Pick<Work, 'author' | 'authors'>): string {
-	const list = work.authors ?? [];
-	if (list.length !== 1) return work.author;
-	const { account, pseud } = list[0];
-	return pseud && pseud !== account ? `${pseud} (${account})` : account;
+export function authorName(a: WorkAuthor): string {
+	return a.pseud && a.pseud !== a.account ? `${a.pseud} (${a.account})` : a.account;
 }
 
 /**
- * The author page an author link should target: the primary parsed
- * account's page when byline rows exist, else the raw-byline page (the
- * effective key the server groups by — the two always agree).
+ * Byline display text (Author Identity Part B). Parsed byline authors —
+ * one or many — render AO3-style, comma-joined in byline order
+ * ("TheDauntless (GoddessOfWriting), MiladyMacy"), each derived from the
+ * stored work_authors links, NEVER dc:creator (which recorded only the
+ * first co-author for most multi-author fics). No parsed authors (non-AO3,
+ * Anonymous, deleted-author) → the raw `works.author` byline exactly as
+ * today. Rows use this as plain text; the detail page renders each name as
+ * its own link via `authorName`.
  */
-export function authorKeyOf(work: Pick<Work, 'author' | 'authors'>): string {
-	return work.authors?.[0]?.account ?? work.author;
+export function authorDisplay(work: Pick<Work, 'author' | 'authors'>): string {
+	const list = work.authors ?? [];
+	if (list.length === 0) return work.author;
+	return list.map(authorName).join(', ');
 }
 
 type Fetch = typeof fetch;
