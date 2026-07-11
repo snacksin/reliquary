@@ -22,7 +22,13 @@ export const GET: RequestHandler = ({ params }) => {
 			              JOIN tags t ON t.id = wt.tag_id
 			             WHERE wt.work_id = w.id AND t.category = 'personal'
 			             ORDER BY t.name COLLATE NOCASE ASC) pt
-			   ) AS personal_tags
+			   ) AS personal_tags,
+			   (SELECT json_group_array(json_object('account', a.account, 'pseud', a.pseud))
+			      FROM (SELECT wa.account, wa.pseud
+			              FROM work_authors wa
+			             WHERE wa.work_id = w.id
+			             ORDER BY wa.position ASC) a
+			   ) AS authors
 			 FROM works w
 			 LEFT JOIN reading_progress rp ON rp.work_id = w.id
 			 LEFT JOIN ratings rt ON rt.work_id = w.id
@@ -49,6 +55,7 @@ export const GET: RequestHandler = ({ params }) => {
 				rating: number | null;
 				note: string | null;
 				personal_tags: string;
+				authors: string;
 		  }
 		| undefined;
 
@@ -86,6 +93,9 @@ export const GET: RequestHandler = ({ params }) => {
 		// /api/works rows, so the Work shape stays symmetric across both feeds
 		// (rating/note precedent). Seeds the detail page's my-tags editor.
 		personal_tags: JSON.parse(row.personal_tags) as { id: number; name: string }[],
+		// Author Identity Part A: byline authors in order (0 = primary) —
+		// drives the detail page's "pseud (account)" byline + account link.
+		authors: JSON.parse(row.authors) as { account: string; pseud: string | null }[],
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:

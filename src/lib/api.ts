@@ -90,7 +90,41 @@ export type Work = {
 	 * Managed only via /api/works/[id]/tags.
 	 */
 	personal_tags?: PersonalTag[];
+	/**
+	 * Author Identity Part A: the byline authors parsed from the AO3
+	 * preface/summary author LINKS, in byline order (index 0 = primary).
+	 * Empty/absent for non-AO3 works, Anonymous, deleted-author bylines,
+	 * and leaner feeds (series) — all of which fall back to the raw
+	 * `author` string for display. Ingest-owned; never user-edited.
+	 */
+	authors?: WorkAuthor[];
 };
+
+/** One parsed byline author: AO3 account + pseud (null when unpseuded). */
+export type WorkAuthor = { account: string; pseud: string | null };
+
+/**
+ * Byline display text (Author Identity Part A). Single parsed author →
+ * AO3-style "pseud (account)" (or just the account when unpseuded / the
+ * pseud IS the account name). No parsed authors (non-AO3, Anonymous) or
+ * multiple (co-authored — Part B's display work) → the raw `works.author`
+ * byline exactly as today (Allie's Q1 interim decision).
+ */
+export function authorDisplay(work: Pick<Work, 'author' | 'authors'>): string {
+	const list = work.authors ?? [];
+	if (list.length !== 1) return work.author;
+	const { account, pseud } = list[0];
+	return pseud && pseud !== account ? `${pseud} (${account})` : account;
+}
+
+/**
+ * The author page an author link should target: the primary parsed
+ * account's page when byline rows exist, else the raw-byline page (the
+ * effective key the server groups by — the two always agree).
+ */
+export function authorKeyOf(work: Pick<Work, 'author' | 'authors'>): string {
+	return work.authors?.[0]?.account ?? work.author;
+}
 
 type Fetch = typeof fetch;
 
@@ -112,8 +146,13 @@ type ListOpts = {
 	page?: number;
 	perPage?: number;
 	q?: string;
-	/** Author Pages: scope the listing to one exact author. */
+	/** Author Pages: scope the listing to one author (the effective key). */
 	author?: string;
+	/**
+	 * Author Identity Part A: with `author`, narrow to works whose primary
+	 * byline pseud label matches (the author page's pseud sub-filter).
+	 */
+	pseud?: string;
 	/** Library sort key (you-layer Step 1b): 'added' (default) | 'rating'. */
 	sort?: string;
 	/** Star-rating filter: exact multi-select — keep works rated any of these (1–5). */
@@ -136,6 +175,7 @@ function buildListParams(opts: ListOpts | undefined): URLSearchParams {
 	// string means "no search filter" (same as omitting the param).
 	if (opts?.q && opts.q.trim()) search.set('q', opts.q);
 	if (opts?.author) search.set('author', opts.author);
+	if (opts?.author && opts?.pseud) search.set('pseud', opts.pseud);
 	// You-layer Step 1b: sort + rating/favorites filters. Dropped when at the
 	// default/empty so a bare listing URL stays clean (server treats absent as
 	// "no filter" / default sort).
@@ -555,12 +595,23 @@ export type AuthorTag = { id: number; name: string };
 /** A vocabulary entry plus how many authors carry it (for filter chips). */
 export type AuthorTagVocabItem = { id: number; name: string; author_count: number };
 
-/** The saved free-text note for one author (null = none). */
-export async function getAuthorNote(name: string, fetch: Fetch): Promise<string | null> {
+/** One "pseud seen so far" on an account, with its live-work count. */
+export type AuthorPseud = { pseud: string; count: number };
+
+/**
+ * The author's saved note plus the account's pseud list (Author Identity
+ * Part A) — one fetch for the author page's left column + pseud sub-filter.
+ * `pseuds` is empty for authors with no parsed byline rows (non-AO3,
+ * Anonymous).
+ */
+export async function getAuthorDetail(
+	name: string,
+	fetch: Fetch
+): Promise<{ notes: string | null; pseuds: AuthorPseud[] }> {
 	const res = await fetch(`/api/authors/${encodeURIComponent(name)}`);
 	if (!res.ok) throw new Error(await extractError(res));
-	const body = (await res.json()) as { notes: string | null };
-	return body.notes;
+	const body = (await res.json()) as { notes: string | null; pseuds: AuthorPseud[] };
+	return { notes: body.notes, pseuds: body.pseuds ?? [] };
 }
 
 /** Save (or clear, with an empty string) the author's note. */

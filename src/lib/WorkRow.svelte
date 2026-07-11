@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Heart, Star } from 'lucide-svelte';
 	import { summaryText, notePreview } from '$lib/rowText';
-	import type { Work } from '$lib/api';
+	import { authorDisplay, type Work } from '$lib/api';
 
 	/**
 	 * One work row in a library-style list (library middle column +
@@ -54,7 +54,11 @@
 				<span class="read-badge">Read</span>
 			{/if}
 		</strong>
-		<span class="meta">{showAuthor ? `by ${work.author} · ` : ''}{chapterLabel}</span>
+		<!-- Author Identity Part A: AO3-style "pseud (account)" byline text.
+	     Unpseuded / non-AO3 / multi-author render byte-identical to today
+	     (authorDisplay falls back to the raw works.author). Text only — the
+	     whole row is already one <a> to the work, so no nested anchor. -->
+	<span class="meta">{showAuthor ? `by ${authorDisplay(work)} · ` : ''}{chapterLabel}</span>
 		{#if work.rating}
 			<span class="row-rating" aria-label="Your rating: {work.rating} of 5 stars">
 				{#each [1, 2, 3, 4, 5] as n (n)}

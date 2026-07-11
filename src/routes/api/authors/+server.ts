@@ -3,10 +3,16 @@ import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 
 /**
- * `GET /api/authors` — every distinct author (exact `works.author`
- * string) with ≥1 non-trashed work, plus their non-trashed work count
- * and manual-favorite flag. Sorted by work count DESC, name ASC
- * (case-insensitive) tiebreak. Powers the /authors index.
+ * `GET /api/authors` — every distinct author with ≥1 non-trashed work,
+ * plus their non-trashed work count and manual-favorite flag. Sorted by
+ * work count DESC, name ASC (case-insensitive) tiebreak. Powers the
+ * /authors index.
+ *
+ * Author Identity Part A: "author" is the EFFECTIVE key — the parsed
+ * primary ACCOUNT for AO3 works with byline rows, else the raw
+ * `works.author` string (non-AO3, Anonymous). Same expression as the
+ * author scopes in /api/works and /api/tags. A pseud-authored fic and an
+ * unpseuded fic by the same account now group into one index entry.
  *
  * Trashed works are excluded from both membership and the count.
  *
@@ -38,7 +44,7 @@ export const GET: RequestHandler = ({ url }) => {
 	if (tagIds.length > 0) {
 		const placeholders = tagIds.map(() => '?').join(', ');
 		tagClause = `
-			  AND w.author IN (
+			  AND author_key IN (
 			    SELECT author_name FROM author_tag_links
 			     WHERE author_tag_id IN (${placeholders})
 			     GROUP BY author_name
@@ -47,14 +53,23 @@ export const GET: RequestHandler = ({ url }) => {
 		params.push(...tagIds, tagIds.length);
 	}
 
+	// Effective author key resolved once in an inner select, then grouped /
+	// joined / filtered by name — keeps the COALESCE expression in one place.
 	const rows = db
 		.prepare(
-			`SELECT w.author AS name, COUNT(*) AS work_count, a.favorited_at AS favorited_at
-			   FROM works w
-			   LEFT JOIN authors a ON a.name = w.author
-			  WHERE w.trashed_at IS NULL${tagClause}
-			  GROUP BY w.author
-			  ORDER BY work_count DESC, w.author COLLATE NOCASE ASC`
+			`SELECT author_key AS name, COUNT(*) AS work_count, a.favorited_at AS favorited_at
+			   FROM (
+			     SELECT COALESCE(
+			       (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
+			       w.author
+			     ) AS author_key
+			      FROM works w
+			     WHERE w.trashed_at IS NULL
+			   )
+			   LEFT JOIN authors a ON a.name = author_key
+			  WHERE 1=1${tagClause}
+			  GROUP BY author_key
+			  ORDER BY work_count DESC, author_key COLLATE NOCASE ASC`
 		)
 		.all(...params) as Row[];
 

@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
+import { authorKeyExists } from '$lib/server/authors';
 
 /**
  * Per-author tags (Author Pages Part 2). The tags themselves live in a shared,
@@ -8,19 +9,16 @@ import { getDb } from '$lib/server/db';
  * attached to one author via `author_tag_links`. Removing a link detaches the
  * tag from the author but never deletes it from the vocabulary.
  *
- * All verbs 404 unless some work has that author (same guard as the favorite /
- * note endpoints).
+ * All verbs 404 unless some work resolves to that EFFECTIVE author key
+ * (Author Identity Part A — same guard as the favorite / note endpoints).
  */
-function authorExists(db: ReturnType<typeof getDb>, name: string): boolean {
-	return db.prepare('SELECT 1 FROM works WHERE author = ? LIMIT 1').get(name) !== undefined;
-}
 
 type TagRow = { id: number; name: string };
 
 /** GET /api/authors/[name]/tags — this author's attached tags, name-sorted. */
 export const GET: RequestHandler = ({ params }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 	const rows = db
 		.prepare(
 			`SELECT t.id AS id, t.name AS name
@@ -40,7 +38,7 @@ export const GET: RequestHandler = ({ params }) => {
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 
 	let body: unknown;
 	try {
@@ -80,7 +78,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
  */
 export const DELETE: RequestHandler = async ({ params, request }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 
 	let body: unknown;
 	try {

@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
+import { authorKeyExists } from '$lib/server/authors';
 
 /**
  * Manual favorite-author toggle (Author Pages Part 1). Independent of
@@ -8,13 +9,11 @@ import { getDb } from '$lib/server/db';
  * never auto-set from any heuristic (mirrors the no-auto-favoriting
  * policy on works.favorited_at).
  *
- * The `[name]` route param is the URL-encoded exact `works.author`
- * string; SvelteKit decodes it. Both verbs 404 unless some work
- * actually has that author, so you can't favorite a phantom name.
+ * The `[name]` route param is the URL-encoded EFFECTIVE author key
+ * (Author Identity Part A: the account for AO3 works, else the raw
+ * `works.author` string); SvelteKit decodes it. Both verbs 404 unless
+ * some work resolves to that key, so you can't favorite a phantom name.
  */
-function authorExists(db: ReturnType<typeof getDb>, name: string): boolean {
-	return db.prepare('SELECT 1 FROM works WHERE author = ? LIMIT 1').get(name) !== undefined;
-}
 
 /**
  * POST /api/authors/[name]/favorite — mark the author a favorite.
@@ -23,7 +22,7 @@ function authorExists(db: ReturnType<typeof getDb>, name: string): boolean {
  */
 export const POST: RequestHandler = ({ params }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 	db.prepare(
 		`INSERT INTO authors (name, favorited_at) VALUES (?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(name) DO UPDATE SET favorited_at = CURRENT_TIMESTAMP`
@@ -39,7 +38,7 @@ export const POST: RequestHandler = ({ params }) => {
  */
 export const DELETE: RequestHandler = ({ params }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 	db.prepare('UPDATE authors SET favorited_at = NULL WHERE name = ?').run(params.name);
 	return new Response(null, { status: 204 });
 };

@@ -88,13 +88,19 @@ export const GET: RequestHandler = ({ url }) => {
 		whereClauses.push(`NOT ${hiddenExpr}`);
 	}
 
-	// Author Pages Part 1: optional author scope. When present, counts
-	// (and the join's liveness EXISTS) are restricted to that author's
-	// non-trashed works, so the author-detail sidebar shows only that
-	// author's tags with author-scoped counts. Bound param appended only
-	// when scoping.
+	// Author Pages Part 1 → Author Identity Part A: optional author scope,
+	// keyed on the EFFECTIVE author key (parsed primary account when the
+	// work has byline rows, else raw works.author) — same expression as
+	// /api/works' author scope so the author page's sidebar and middle
+	// column can never disagree. Counts (and the join's liveness EXISTS)
+	// are restricted to that author's non-trashed works.
 	const author = url.searchParams.get('author');
-	const authorClause = author ? ` AND w.author = ?` : '';
+	const authorClause = author
+		? ` AND COALESCE(
+		      (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
+		      w.author
+		    ) = ?`
+		: '';
 	const params: unknown[] = author ? [author] : [];
 
 	// M2.3 Step 4: trashed works don't inflate sidebar counts. The join

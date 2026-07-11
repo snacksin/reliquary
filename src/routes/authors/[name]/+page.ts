@@ -4,7 +4,7 @@ import {
 	listWorks,
 	getTags,
 	getAuthors,
-	getAuthorNote,
+	getAuthorDetail,
 	getAuthorTags,
 	getAuthorTagVocab,
 	type TagCategory
@@ -73,12 +73,24 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 	const page = parsePage(url.searchParams.get('page'));
 	const perPage = parsePerPage(url.searchParams.get('per_page'));
 	const q = url.searchParams.get('q') ?? '';
+	// Author Identity Part A: optional pseud sub-filter (URL param, so it's
+	// bookmarkable and back-button-friendly like every other filter). The
+	// server matches it against the primary byline pseud label.
+	const pseud = url.searchParams.get('pseud') ?? '';
 
-	const [authors, filteredPage, tagGroups, notes, authorTags, tagVocab] = await Promise.all([
+	const [authors, filteredPage, tagGroups, detail, authorTags, tagVocab] = await Promise.all([
 		getAuthors(fetch),
-		listWorks(fetch, { author, tags: selectedTagIds, matchAll: matchAllCategories, q, page, perPage }),
+		listWorks(fetch, {
+			author,
+			pseud: pseud || undefined,
+			tags: selectedTagIds,
+			matchAll: matchAllCategories,
+			q,
+			page,
+			perPage
+		}),
 		getTags(fetch, { author }),
-		getAuthorNote(author, fetch),
+		getAuthorDetail(author, fetch),
 		getAuthorTags(author, fetch),
 		getAuthorTagVocab(fetch)
 	]);
@@ -93,10 +105,14 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 		selectedTagIds,
 		matchAllCategories,
 		q,
+		pseud,
 		page: filteredPage.page,
 		perPage: filteredPage.per_page,
 		// Author Pages Part 2: left-column notes + tags.
-		notes,
+		notes: detail.notes,
+		// Author Identity Part A: "pseuds seen so far" with live-work counts —
+		// drives the pseud sub-filter pills (shown only when ≥2 labels).
+		pseuds: detail.pseuds,
 		authorTags,
 		tagVocab
 	};

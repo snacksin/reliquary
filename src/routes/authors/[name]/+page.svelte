@@ -18,8 +18,26 @@
 
 	const author = $derived(data.author);
 	const filtered = $derived(
-		data.selectedTagIds.length > 0 || data.q.trim().length > 0
+		data.selectedTagIds.length > 0 || data.q.trim().length > 0 || data.pseud.length > 0
 	);
+
+	// Author Identity Part A: pseud sub-filter pills. Only rendered when the
+	// account has ≥2 distinct pseud labels among its live works — a single
+	// (or default) pseud carries no extra information.
+	const showPseuds = $derived(data.pseuds.length >= 2);
+	const pseudTotal = $derived(data.pseuds.reduce((s, p) => s + p.count, 0));
+
+	// Push the pseud filter into the URL (single source of truth —
+	// bookmarkable, history-aware back like every other filter). Filter
+	// changes reset pagination, same as the tag toggles.
+	function pushPseud(next: string | null) {
+		const params = new URLSearchParams(pageState.url.searchParams);
+		if (next) params.set('pseud', next);
+		else params.delete('pseud');
+		params.delete('page');
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
 
 	// Optimistic favorite toggle, reverted by invalidateAll on settle.
 	let pendingFav = $state<boolean | null>(null);
@@ -77,12 +95,47 @@
 		<p class="error">{favError}</p>
 	{/if}
 
+
 	<div class="cols">
 		<!-- Left: Part 2 notes + tags (was the "coming soon" stub). The {#key}
 		     remounts the component per author so its prop-seeded local state
 		     (note draft, tag chips) resets cleanly when SvelteKit reuses this
 		     route for a different [name]. -->
 		<aside class="left-col" aria-label="Author notes and tags">
+			<!-- Author Identity Part A (amended placement): "pseuds seen so far"
+			     + per-pseud sub-filter, as its own labeled block above Notes —
+			     matching the left column's NOTES/TAGS block language instead of
+			     a full-width band crowding the grid. Hidden unless the account
+			     has ≥2 distinct pseud labels. Pills write a ?pseud= URL param,
+			     so the state is bookmarkable and the history-aware back button
+			     walks through it like every other filter. -->
+			{#if showPseuds}
+				<section class="pseud-block" role="group" aria-label="Filter by pseud">
+					<p class="pseud-block-label">Pseuds</p>
+					<div class="pseud-pills">
+						<button
+							type="button"
+							class="pseud-pill"
+							class:active={data.pseud === ''}
+							aria-pressed={data.pseud === ''}
+							onclick={() => pushPseud(null)}
+						>
+							All ({pseudTotal})
+						</button>
+						{#each data.pseuds as p (p.pseud)}
+							<button
+								type="button"
+								class="pseud-pill"
+								class:active={data.pseud === p.pseud}
+								aria-pressed={data.pseud === p.pseud}
+								onclick={() => pushPseud(data.pseud === p.pseud ? null : p.pseud)}
+							>
+								{p.pseud} ({p.count})
+							</button>
+						{/each}
+					</div>
+				</section>
+			{/if}
 			{#key author.name}
 				<AuthorNotesTags
 					name={author.name}
@@ -156,6 +209,45 @@
 		padding: 0 1.25rem 4rem;
 		font-family: system-ui, sans-serif;
 		color: var(--reader-fg);
+	}
+	/* Author Identity Part A (amended placement): pseud sub-filter as a
+	   labeled left-column block above Notes — same block-label rhythm as
+	   the NOTES/TAGS blocks (AuthorNotesTags.svelte), same pill language
+	   as the rating filter buttons: theme-aware, accent-filled when active. */
+	.pseud-block {
+		margin: 0 0 1.25rem;
+	}
+	.pseud-block-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--reader-muted);
+		margin: 0 0 0.4rem;
+	}
+	.pseud-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.pseud-pill {
+		font: inherit;
+		font-size: 0.78rem;
+		padding: 2px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--reader-border);
+		background: transparent;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.pseud-pill:hover {
+		border-color: var(--reader-accent);
+		color: var(--reader-fg);
+	}
+	.pseud-pill.active {
+		background: var(--reader-accent);
+		border-color: var(--reader-accent);
+		color: var(--reader-bg);
+		font-weight: 600;
 	}
 	.back {
 		margin: 0 0 0.75rem;
