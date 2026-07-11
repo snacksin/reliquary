@@ -8,6 +8,7 @@
 	import Pagination from '$lib/Pagination.svelte';
 	import SearchInput from '$lib/SearchInput.svelte';
 	import WorkRow from '$lib/WorkRow.svelte';
+	import WorkCard from '$lib/WorkCard.svelte';
 	import type { PageProps } from './$types';
 
 	const PER_PAGE_OPTIONS = [10, 12, 15] as const;
@@ -170,6 +171,38 @@
 		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
 	}
 
+	/**
+	 * List/Grid view toggle (Cover Art Part B) — the per-page idiom
+	 * verbatim: URL is the runtime source of truth (`view=grid`, absent =
+	 * list — SSR renders the right presentation, links are shareable);
+	 * localStorage records the latest choice so a bare URL auto-aligns.
+	 * A view flip does NOT reset pagination — it re-presents the same
+	 * slice, unlike filters/sort which change the result set.
+	 */
+	const VIEW_STORAGE_KEY = 'prefs:library:view';
+	function pushView(next: 'list' | 'grid') {
+		if (typeof window !== 'undefined') {
+			localStorage.setItem(VIEW_STORAGE_KEY, next);
+		}
+		const params = new URLSearchParams(pageState.url.searchParams);
+		if (next === 'list') params.delete('view');
+		else params.set('view', next);
+		const qs = params.toString();
+		goto(qs ? `?${qs}` : '?', { keepFocus: true, noScroll: true });
+	}
+
+	let viewSyncDone = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined' || viewSyncDone) return;
+		viewSyncDone = true;
+		if (pageState.url.searchParams.get('view')) return; // URL wins
+		const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+		if (stored !== 'grid') return; // list is the default — nothing to align
+		const params = new URLSearchParams(pageState.url.searchParams);
+		params.set('view', 'grid');
+		goto(`?${params.toString()}`, { replaceState: true, keepFocus: true, noScroll: true });
+	});
+
 	let perPageSyncDone = $state(false);
 	$effect(() => {
 		if (typeof window === 'undefined' || perPageSyncDone) return;
@@ -300,6 +333,29 @@
 				{/if}
 			</h2>
 			{#if data.works.length > 0}
+				<!-- Cover Art Part B: List/Grid presentation toggle. Sits with the
+				     other view controls; accent-filled active segment (the rating-
+				     button language). View is a pref, not a filter — no page reset. -->
+				<div class="view-toggle" role="group" aria-label="Library view">
+					<button
+						type="button"
+						class="view-btn"
+						class:active={data.view === 'list'}
+						aria-pressed={data.view === 'list'}
+						onclick={() => pushView('list')}
+					>
+						☰ List
+					</button>
+					<button
+						type="button"
+						class="view-btn"
+						class:active={data.view === 'grid'}
+						aria-pressed={data.view === 'grid'}
+						onclick={() => pushView('grid')}
+					>
+						▦ Grid
+					</button>
+				</div>
 				<label class="sort-picker">
 					<span class="sort-label">Sort</span>
 					<select value={data.sort} onchange={(e) => pushSort((e.target as HTMLSelectElement).value)}>
@@ -335,6 +391,16 @@
 					No works match the current filters.
 				{/if}
 			</p>
+		{:else if data.view === 'grid'}
+			<!-- Grid mode (Part B): same projected rows, different presentation —
+			     the query pipeline (filters/sort/search/pagination) is identical
+			     to list mode by construction. -->
+			<div class="work-grid">
+				{#each data.filteredPage.works as work (work.id)}
+					<WorkCard {work} />
+				{/each}
+			</div>
+			<Pagination page={data.filteredPage.page} totalPages={data.filteredPage.total_pages} />
 		{:else}
 			<ul class="works">
 				{#each data.filteredPage.works as work (work.id)}
@@ -662,6 +728,39 @@
 	/* Middle-column library list — unchanged from M1 Step 9. */
 	.empty {
 		color: var(--reader-muted);
+	}
+	/* Cover Art Part B — grid mode. auto-fill + minmax reflows to 2–3
+	   columns on narrow viewports with no separate mobile layout; ~4–5
+	   columns at the middle column's desktop width (Variant B density). */
+	.work-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+		gap: 16px 14px;
+		margin-bottom: 1rem;
+	}
+	/* List/Grid segmented toggle — the rating-button pill language. */
+	.view-toggle {
+		display: inline-flex;
+		border: 1px solid var(--reader-border);
+		border-radius: 5px;
+		overflow: hidden;
+	}
+	.view-btn {
+		font: inherit;
+		font-size: 0.72rem;
+		padding: 3px 10px;
+		border: none;
+		background: transparent;
+		color: var(--reader-muted);
+		cursor: pointer;
+	}
+	.view-btn:hover:not(.active) {
+		color: var(--reader-fg);
+	}
+	.view-btn.active {
+		background: var(--reader-accent);
+		color: var(--reader-bg);
+		font-weight: 600;
 	}
 	ul.works {
 		list-style: none;
