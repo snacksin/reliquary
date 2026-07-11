@@ -6,6 +6,7 @@ import { purgeExpired } from './purge';
 import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
 import { backfillDecodeText } from './textdecode';
+import { backfillAuthorIdentity } from './authors';
 
 let cached: Database.Database | undefined;
 
@@ -97,6 +98,16 @@ export function getDb(): Database.Database {
 		backfillDecodeText(db);
 	} catch (e) {
 		console.error('[text-decode] failed', e);
+	}
+
+	// Author Identity Part A: one-shot work_authors backfill from stored
+	// wrappers + the authors-table re-key to account keys. Runs AFTER the
+	// text-decode pass (re-keys should see decoded names) and before purge.
+	// Guarded — a failure here can never block boot.
+	try {
+		backfillAuthorIdentity(db);
+	} catch (e) {
+		console.error('[author-backfill] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more

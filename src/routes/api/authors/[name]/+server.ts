@@ -1,29 +1,45 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
+import { authorKeyExists } from '$lib/server/authors';
 
 /**
- * Author note (Author Pages Part 2). One free-text note per author, keyed by
- * the exact `works.author` string (URL-encoded in the route, decoded by
- * SvelteKit). The `authors` row is shared with the Part 1 favorite flag and
- * the Part 2 tag links; it's upserted on first write so a note can exist for
- * an author who was never favorited.
+ * Author note (Author Pages Part 2) + pseud list (Author Identity Part A).
+ * One free-text note per author, keyed by the EFFECTIVE author key — the
+ * parsed primary account for AO3 works, else the raw `works.author` string
+ * (URL-encoded in the route, decoded by SvelteKit). The `authors` row is
+ * shared with the Part 1 favorite flag and the Part 2 tag links; it's
+ * upserted on first write so a note can exist for an author who was never
+ * favorited.
  *
- * Both verbs 404 unless some work actually has that author, mirroring the
- * favorite endpoint — you can't annotate a phantom name.
+ * Both verbs 404 unless some work resolves to that author key, mirroring
+ * the favorite endpoint — you can't annotate a phantom name.
  */
-function authorExists(db: ReturnType<typeof getDb>, name: string): boolean {
-	return db.prepare('SELECT 1 FROM works WHERE author = ? LIMIT 1').get(name) !== undefined;
-}
 
-/** GET /api/authors/[name] — the author's saved note (null if none). */
+/**
+ * GET /api/authors/[name] — the author's saved note (null if none) plus the
+ * account's "pseuds seen so far": distinct primary-author pseud labels over
+ * this account's LIVE works, with per-pseud work counts (drives the author
+ * page's pseud sub-filter). Unpseuded byline URLs label as the account name
+ * itself. Empty for authors with no byline rows (non-AO3, Anonymous).
+ */
 export const GET: RequestHandler = ({ params }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 	const row = db.prepare('SELECT notes FROM authors WHERE name = ?').get(params.name) as
 		| { notes: string | null }
 		| undefined;
-	return json({ name: params.name, notes: row?.notes ?? null });
+	const pseuds = db
+		.prepare(
+			`SELECT COALESCE(wa.pseud, wa.account) AS pseud, COUNT(*) AS count
+			   FROM work_authors wa
+			   JOIN works w ON w.id = wa.work_id
+			  WHERE wa.position = 0 AND wa.account = ? AND w.trashed_at IS NULL
+			  GROUP BY COALESCE(wa.pseud, wa.account)
+			  ORDER BY count DESC, pseud COLLATE NOCASE ASC`
+		)
+		.all(params.name) as { pseud: string; count: number }[];
+	return json({ name: params.name, notes: row?.notes ?? null, pseuds });
 };
 
 /**
@@ -33,7 +49,7 @@ export const GET: RequestHandler = ({ params }) => {
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	const db = getDb();
-	if (!authorExists(db, params.name)) throw error(404, 'author not found');
+	if (!authorKeyExists(db, params.name)) throw error(404, 'author not found');
 
 	let body: unknown;
 	try {

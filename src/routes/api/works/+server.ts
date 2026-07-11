@@ -20,6 +20,7 @@ type Row = {
 	rating: number | null;
 	note: string | null;
 	personal_tags: string;
+	authors: string;
 };
 
 /**
@@ -188,6 +189,11 @@ function rowToWork(r: Row) {
 		// aggregated to JSON in SQL (ordered inner select: json_group_array
 		// alone doesn't guarantee order). Drives the row's my-tag chips.
 		personal_tags: JSON.parse(r.personal_tags) as { id: number; name: string }[],
+		// Author Identity Part A: the parsed byline authors in byline order
+		// (position 0 = primary). Empty for non-AO3 works and Anonymous — the
+		// client falls back to the raw works.author byline for those (and,
+		// per the Part A interim decision, for multi-author works too).
+		authors: JSON.parse(r.authors) as { account: string; pseud: string | null }[],
 		// When this work last GREW its chapter count (update-in-place). The
 		// Continue Reading carousel sorts a resurfaced work by the later of
 		// this and its reading recency, so fresh chapters bump it up.
@@ -231,7 +237,13 @@ const SELECT_COLUMNS = `
              JOIN tags t ON t.id = wt.tag_id
             WHERE wt.work_id = w.id AND t.category = 'personal'
             ORDER BY t.name COLLATE NOCASE ASC) pt
-  ) AS personal_tags
+  ) AS personal_tags,
+  (SELECT json_group_array(json_object('account', a.account, 'pseud', a.pseud))
+     FROM (SELECT wa.account, wa.pseud
+             FROM work_authors wa
+            WHERE wa.work_id = w.id
+            ORDER BY wa.position ASC) a
+  ) AS authors
 `;
 
 /**
@@ -320,6 +332,19 @@ const TAG_FILTER_CLAUSE = `w.id IN (
  * untouched); the sanitized query expression (with `*` prefix markers + implicit
  * AND) is bound once per MATCH.
  */
+/**
+ * The effective author key (Author Identity Part A): the parsed primary
+ * account when the work has byline author rows (AO3 works), else the raw
+ * `works.author` string (non-AO3 sources, Anonymous, deleted-author
+ * bylines). Author pages group by this key; the same expression appears in
+ * /api/tags' author scope and /api/authors' grouping so the three surfaces
+ * can never disagree.
+ */
+const AUTHOR_KEY = `COALESCE(
+  (SELECT wa.account FROM work_authors wa WHERE wa.work_id = w.id AND wa.position = 0),
+  w.author
+)`;
+
 const SEARCH_CLAUSE = `w.id IN (
   SELECT work_id FROM works_fts WHERE works_fts MATCH ?
   UNION
@@ -353,13 +378,29 @@ export const GET: RequestHandler = ({ url }) => {
 	// AND-composes here). No param needed.
 	whereParts.push('w.trashed_at IS NULL');
 
-	// Author Pages Part 1: optional author scope (exact works.author
-	// match). Additive — ANDs with the trashed/tag/search clauses, so the
-	// author-detail middle column reuses this endpoint unchanged.
+	// Author Pages Part 1 → Author Identity Part A: optional author scope,
+	// now keyed on the EFFECTIVE author key — the parsed primary account
+	// when the work has byline author rows, else the raw works.author
+	// string (non-AO3 / Anonymous). Additive — ANDs with the trashed/tag/
+	// search clauses, so the author-detail middle column reuses this
+	// endpoint unchanged.
 	const author = url.searchParams.get('author');
 	if (author) {
-		whereParts.push('w.author = ?');
+		whereParts.push(`${AUTHOR_KEY} = ?`);
 		whereParams.push(author);
+		// Per-pseud sub-filter (author page only — meaningless without the
+		// account scope, so it's gated on `author`). Matches the PRIMARY
+		// author's pseud; NULL-pseud rows are addressed by the account name
+		// itself (the client sends the label it displayed).
+		const pseud = url.searchParams.get('pseud');
+		if (pseud) {
+			whereParts.push(
+				`EXISTS (SELECT 1 FROM work_authors wa
+				          WHERE wa.work_id = w.id AND wa.position = 0
+				            AND COALESCE(wa.pseud, wa.account) = ?)`
+			);
+			whereParams.push(pseud);
+		}
 	}
 
 	if (tagIds.length > 0) {

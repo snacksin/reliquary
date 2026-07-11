@@ -14,6 +14,7 @@ import {
 } from './epub';
 import { computeContentHash, countWords, hashChapterContent } from './identity';
 import { syncWorkSeries } from './series';
+import { extractWorkAuthors, syncWorkAuthors } from './authors';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -234,6 +235,18 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// MS Step 1: where this EPUB came from (ao3 / fichub-* / unknown), from the
 	// same preface. Recorded on the works row; identical logic to the backfill.
 	const source = detectSource(prefaceChapter?.html ?? '');
+	// Author Identity Part A: byline authors from the rel="author" LINKS
+	// (account + pseud straight from the /users/… URL — never the display
+	// string). The byline anchor lives in the SUMMARY wrapper in AO3 EPUBs,
+	// so both wrappers are scanned. AO3-source only; other sources get no
+	// rows and every author surface falls back to works.author unchanged.
+	// Deliberately NOT part of the content hash — computeContentHash inputs
+	// above are untouched (#64 hash-from-raw stays byte-identical).
+	const summaryChapter = parsed.chapters.find((c) => c.kind === 'summary');
+	const workAuthors =
+		source === 'ao3'
+			? extractWorkAuthors((summaryChapter?.html ?? '') + (prefaceChapter?.html ?? ''))
+			: [];
 
 	const db = getDb();
 	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount);
@@ -459,6 +472,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// Series Pages Part 1: refresh this work's series links (and
 				// stamp series_scanned_at) from the re-parsed preface.
 				syncWorkSeries(db, finalId, seriesEntries);
+
+				// Author Identity Part A: refresh the byline author rows.
+				// work_authors is ingest-owned, so a full rewrite is safe.
+				syncWorkAuthors(db, finalId, workAuthors);
 			})();
 		} catch (e) {
 			console.error(`[ingest] DB update failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
@@ -549,6 +566,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			// Series Pages Part 1: write this work's series links (and stamp
 			// series_scanned_at) so the backfill skips this fresh work.
 			syncWorkSeries(db, work_id, seriesEntries);
+
+			// Author Identity Part A: byline author rows (fresh work — the
+			// boot backfill will find rows present and skip it).
+			syncWorkAuthors(db, work_id, workAuthors);
 		})();
 	} catch (e) {
 		console.error(`[ingest] DB write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);

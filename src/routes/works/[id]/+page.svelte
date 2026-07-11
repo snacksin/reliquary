@@ -12,6 +12,8 @@
 		setRating,
 		clearRating,
 		daysUntilPurge,
+		authorDisplay,
+		authorKeyOf,
 		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
@@ -334,8 +336,15 @@
 					<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
 				</button>
 			</div>
+			<!-- Author Identity Part A: "pseud (account)" byline linking to the
+			     ACCOUNT's author page (the effective key the server groups by).
+			     Unpseuded / non-AO3 / multi-author fall back to the raw byline
+			     text; the link always targets the primary account's page. -->
 			<p class="author">
-				by <a href="/authors/{encodeURIComponent(data.work.author)}">{data.work.author}</a>
+				by
+				<a href="/authors/{encodeURIComponent(authorKeyOf(data.work))}"
+					>{authorDisplay(data.work)}</a
+				>
 			</p>
 			<div
 				class="rating-control"
