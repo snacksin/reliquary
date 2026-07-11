@@ -133,6 +133,35 @@ export async function removeCover(workId: string, fetch: Fetch): Promise<void> {
 	if (!res.ok) throw new Error(await extractError(res));
 }
 
+/**
+ * The work's extracted image filenames (Part A.5) — the pick-a-cover
+ * gallery's candidates. Each renders via /api/works/{id}/images/{filename}.
+ */
+export async function getWorkImages(workId: string, fetch: Fetch): Promise<string[]> {
+	const res = await fetch(`/api/works/${workId}/images`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * Set the cover from one of the work's own extracted images (Part A.5).
+ * Server-side the file is COPIED to the manual-cover location — the result
+ * is indistinguishable from an upload (manual precedence, same Remove).
+ */
+export async function setCoverFromImage(
+	workId: string,
+	image: string,
+	fetch: Fetch
+): Promise<{ cover_v: string }> {
+	const res = await fetch(`/api/works/${workId}/cover`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ image })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
 /** One parsed byline author: AO3 account + pseud (null when unpseuded). */
 export type WorkAuthor = { account: string; pseud: string | null };
 

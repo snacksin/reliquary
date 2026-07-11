@@ -100,24 +100,91 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	const workDir = join('data', 'works', params.id);
 	if (!existsSync(workDir)) throw error(404, 'work not found');
 
-	const filename = `cover-${Date.now()}${kind.ext}`;
+	return json(installManualCover(db, params.id, workDir, row, buf, kind.ext), { status: 200 });
+};
+
+/**
+ * Shared tail of both manual-cover paths (file upload + pick-from-images):
+ * write the bytes to a fresh timestamped `cover-<ts>.<ext>` at the work-dir
+ * root, drop the prior manual file if any (no other owner), and stamp the
+ * row 'manual'. Downstream, an installed cover is indistinguishable
+ * regardless of origin — same dir-swap carry, same Remove semantics.
+ */
+function installManualCover(
+	db: ReturnType<typeof getDb>,
+	workId: string,
+	workDir: string,
+	prior: CoverRow,
+	buf: Buffer,
+	ext: string
+): { cover_v: string } {
+	const filename = `cover-${Date.now()}${ext}`;
 	writeFileSync(join(workDir, filename), buf);
 
-	// Replacing a prior MANUAL cover: its file has no other owner — remove it.
-	if (row.cover_source === 'manual' && row.cover_path) {
+	if (prior.cover_source === 'manual' && prior.cover_path) {
 		try {
-			unlinkSync(row.cover_path);
+			unlinkSync(prior.cover_path);
 		} catch {
 			/* already gone — fine */
 		}
 	}
 
-	const coverPath = join(workDir, filename);
 	db.prepare(`UPDATE works SET cover_path = ?, cover_source = 'manual' WHERE id = ?`).run(
-		coverPath,
-		params.id
+		join(workDir, filename),
+		workId
 	);
-	return json({ cover_v: filename }, { status: 200 });
+	return { cover_v: filename };
+}
+
+/**
+ * PATCH /api/works/[id]/cover — set the cover from one of the work's own
+ * EXTRACTED images (Cover Art Part A.5). Body: { image: "<filename>" }, a
+ * bare filename within data/works/<id>/images/ (traversal-guarded, raster
+ * types only — the same set the images route serves).
+ *
+ * 🔴 The picked file is COPIED to the manual-cover location, never
+ * referenced in place: ingest rewrites images/ wholesale on every
+ * update-in-place, so an in-place reference would dangle after a re-drop.
+ * The copy makes a picked cover indistinguishable from an uploaded one —
+ * cover_source='manual', survives the dir swap via the existing carry,
+ * identical Remove/replace semantics.
+ */
+export const PATCH: RequestHandler = async ({ params, request }) => {
+	const db = getDb();
+	const row = coverRow(db, params.id);
+	if (!row) throw error(404, 'work not found');
+
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'invalid JSON body');
+	}
+	const image = (body as { image?: unknown })?.image;
+	if (typeof image !== 'string' || image.length === 0) throw error(400, 'image must be a filename');
+	// Same traversal guard as the images serving route: bare filename only.
+	if (
+		image === '.' ||
+		image === '..' ||
+		image.includes('..') ||
+		image.includes('/') ||
+		image.includes('\\') ||
+		image.includes('\0')
+	) {
+		throw error(400, 'invalid image filename');
+	}
+	const ext = extname(image).toLowerCase();
+	if (!(ext in MIME_BY_EXT)) throw error(400, 'not a raster image');
+
+	const workDir = join('data', 'works', params.id);
+	let buf: Buffer;
+	try {
+		buf = readFileSync(join(workDir, 'images', image));
+	} catch {
+		throw error(404, 'image not found');
+	}
+
+	return json(installManualCover(db, params.id, workDir, row, buf, ext), { status: 200 });
 };
 
 /**

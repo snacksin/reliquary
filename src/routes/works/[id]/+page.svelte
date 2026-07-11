@@ -15,6 +15,7 @@
 		authorName,
 		uploadCover,
 		removeCover,
+		setCoverFromImage,
 		type LastRead
 	} from '$lib/api';
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
@@ -38,6 +39,7 @@
 		// Reset the cover override when navigating between works — the next
 		// work's cover comes from its own load data.
 		pendingCover = undefined;
+		pickerOpen = false;
 		coverError = null;
 	});
 
@@ -79,6 +81,37 @@
 			pendingCover = null;
 		} catch (err) {
 			coverError = err instanceof Error ? err.message : 'Could not remove cover';
+		} finally {
+			coverBusy = false;
+		}
+	}
+
+	// ─── Cover Art Part A.5: pick a cover from the fic's own images ──
+	// AO3's EPUB generator declares no covers even on illustrated fics, but
+	// the body images are already extracted — the Set-cover button opens a
+	// thumbnail gallery of them (plus the upload fallback) whenever the work
+	// has ≥1 extracted image; with none it goes straight to the file picker,
+	// exactly as before. Picking COPIES server-side to the manual location
+	// (never a reference into images/ — ingest rewrites that dir per upload).
+	let pickerOpen = $state(false);
+
+	function handleSetCoverClick() {
+		if (data.workImages.length > 0) {
+			pickerOpen = !pickerOpen;
+		} else {
+			coverInputEl?.click();
+		}
+	}
+
+	async function handlePickImage(image: string) {
+		coverBusy = true;
+		coverError = null;
+		try {
+			const res = await setCoverFromImage(data.work.id, image, fetch);
+			pendingCover = res.cover_v;
+			pickerOpen = false;
+		} catch (err) {
+			coverError = err instanceof Error ? err.message : 'Could not set cover';
 		} finally {
 			coverBusy = false;
 		}
@@ -379,7 +412,8 @@
 						type="button"
 						class="cover-btn"
 						disabled={coverBusy}
-						onclick={() => coverInputEl?.click()}
+						aria-expanded={data.workImages.length > 0 ? pickerOpen : undefined}
+						onclick={handleSetCoverClick}
 					>
 						{coverBusy ? 'Saving…' : coverV !== null ? 'Replace cover' : 'Set cover'}
 					</button>
@@ -389,6 +423,40 @@
 						</button>
 					{/if}
 				</div>
+				<!-- Part A.5: pick-a-cover gallery — the fic's own extracted images
+				     as 2:3 thumbnails, plus the upload fallback. Rendered only when
+				     the work has extracted images (otherwise Set cover opened the
+				     file picker directly above). -->
+				{#if pickerOpen && data.workImages.length > 0}
+					<div class="cover-picker" role="group" aria-label="Pick a cover from this fic's images">
+						<div class="cover-picker-grid">
+							{#each data.workImages as image (image)}
+								<button
+									type="button"
+									class="cover-thumb"
+									disabled={coverBusy}
+									title={image}
+									onclick={() => handlePickImage(image)}
+								>
+									<img src="/api/works/{data.work.id}/images/{image}" alt={image} loading="lazy" />
+								</button>
+							{/each}
+						</div>
+						<div class="cover-picker-foot">
+							<button
+								type="button"
+								class="cover-btn"
+								disabled={coverBusy}
+								onclick={() => coverInputEl?.click()}
+							>
+								Upload image…
+							</button>
+							<button type="button" class="cover-btn" onclick={() => (pickerOpen = false)}>
+								Cancel
+							</button>
+						</div>
+					</div>
+				{/if}
 				{#if coverError}
 					<p class="cover-error" role="alert">{coverError}</p>
 				{/if}
@@ -691,6 +759,49 @@
 		font-size: 0.72rem;
 		margin: 0;
 		max-width: 140px;
+	}
+	/* Part A.5: pick-a-cover gallery. Lives in the cover column beneath the
+	   action buttons; 2:3 thumbs matching the slot language, theme-aware. */
+	.cover-picker {
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		background: var(--reader-card-bg);
+		padding: 6px;
+	}
+	.cover-picker-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 6px;
+		max-height: 320px;
+		overflow-y: auto;
+		scrollbar-width: thin;
+	}
+	.cover-thumb {
+		padding: 0;
+		border: 1px solid var(--reader-border);
+		border-radius: 4px;
+		background: var(--reader-cover-placeholder);
+		cursor: pointer;
+		aspect-ratio: 2 / 3;
+		overflow: hidden;
+	}
+	.cover-thumb:hover:not(:disabled) {
+		border-color: var(--reader-accent);
+	}
+	.cover-thumb:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.cover-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.cover-picker-foot {
+		display: flex;
+		gap: 6px;
+		margin-top: 6px;
 	}
 	.title-row {
 		display: flex;
