@@ -898,6 +898,38 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			else seenWrapper.add(c.kind);
 		}
 
+		// WS Part 1 — continuation merge (the mirror of the title-split merge
+		// above): an UNTITLED chapter item folds into the chapter before it.
+		// Structural gate, any source: every real chapter carries an NCX nav
+		// label ("Chapter N…"), so flow.title is set for it — Calibre's
+		// mid-chapter split files (created at the page-break properties work
+		// skins love: calibre_pb_N markers) are the items that never have one.
+		// Without this, each continuation counted as a phantom chapter:
+		// untitled entries interleaved in the list, inflated chapter_count,
+		// Continue Reading pointing past AO3's real count.
+		//
+		// Chains fold too (a chapter split into 3+ files keeps merging into
+		// the same parent). An untitled chapter with NO chapter before it
+		// (nothing but wrappers ahead of it) stays standalone — never merged
+		// into a preface/summary. Fics with no untitled chapter items pass
+		// through UNCHANGED, so their content_hash stays byte-identical; for
+		// the affected shape the hash intentionally changes (fewer '\0'
+		// chapter boundaries) — the Part 0-reckoned accept-the-shift: a
+		// same-URL re-drop of an already-ingested affected fic is
+		// stale-rejected by the untouched M2.3 guard, and the fix applies via
+		// trash → delete forever → fresh upload (Allie's Part 1 call).
+		const foldedChapters: ParsedChapter[] = [];
+		for (const c of chapters) {
+			const prev = foldedChapters[foldedChapters.length - 1];
+			if (c.kind === 'chapter' && !c.title && prev?.kind === 'chapter') {
+				prev.html += c.html;
+			} else {
+				foldedChapters.push(c);
+			}
+		}
+		chapters.length = 0;
+		chapters.push(...foldedChapters);
+
 		let chapterIndex = 0;
 		for (const c of chapters) {
 			if (c.kind === 'chapter') c.number = chapterIndex += 1;
