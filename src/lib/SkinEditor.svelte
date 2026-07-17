@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { saveSkin, clearSkin } from '$lib/api';
+	import { getSkin, saveSkin, clearSkin } from '$lib/api';
 
 	/**
 	 * "Creator's style" paste box (WS Part 3). AO3 ships the real work skin
@@ -25,9 +25,23 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 
-	function startEdit() {
-		draft = '';
+	// Replace pre-fills the STORED stylesheet (the sanitized/scoped form —
+	// the original paste isn't retained), NotesEditor's edit-mode precedent:
+	// an empty box over an existing skin reads as "my skin got cleared".
+	// Fetch-then-open so the CSS never flashes in late; a failed fetch falls
+	// back to the empty box + placeholder rather than blocking the edit.
+	async function startEdit() {
 		error = null;
+		draft = '';
+		if (baseline) {
+			busy = true;
+			try {
+				draft = await getSkin(workId, fetch);
+			} catch {
+				/* no stored skin reachable — empty box + placeholder */
+			}
+			busy = false;
+		}
 		editing = true;
 	}
 

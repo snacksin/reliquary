@@ -175,6 +175,17 @@ export async function setCoverFromImage(
 }
 
 /**
+ * The work's STORED creator stylesheet (sanitized + #workskin-scoped) as
+ * text — pre-fills the paste box's Replace mode so an existing skin never
+ * reads as cleared. 404s (thrown) when the work has no skin.
+ */
+export async function getSkin(workId: string, fetch: Fetch): Promise<string> {
+	const res = await fetch(`/api/works/${workId}/skin`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.text();
+}
+
+/**
  * Paste the creator's style for a work (WS Part 3). `css` is whatever the
  * user copied — bare CSS, a <style> block, or a whole page source; the
  * server extracts, sanitizes and #workskin-scopes it through the #82
