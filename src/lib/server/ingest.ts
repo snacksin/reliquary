@@ -342,6 +342,16 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			.get(finalId) as { cover_path: string | null; cover_source: string | null };
 		const keepManualCover = existingCover.cover_source === 'manual';
 
+		// Skin precedence (WS Part 3): same rule as covers — a PASTED
+		// ('manual') skin always survives a re-drop; extracted ('epub') skins
+		// keep tracking the incoming EPUB.
+		const keepManualSkin =
+			(
+				db.prepare(`SELECT skin_source FROM works WHERE id = ?`).get(finalId) as {
+					skin_source: string | null;
+				}
+			).skin_source === 'manual';
+
 		try {
 			writeWorkFiles(stagingDir, chapters, parsed.images);
 
@@ -354,10 +364,18 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				cpSync(existingHistoryDir, stagingHistoryDir, { recursive: true });
 			}
 
-			// WS Part 2: the incoming EPUB's (sanitized) skin rides the staging
-			// dir like every other ingest-owned file. Skin-less upload → no
-			// file → the swap clears the old one naturally.
-			if (skinCss) {
+			// WS Part 2/3: a pasted ('manual') skin's file must ride the dir
+			// swap like the manual cover / _history below, or it'd be lost —
+			// carry it and IGNORE the incoming EPUB's CSS. Otherwise the
+			// incoming (sanitized) skin rides staging like every other
+			// ingest-owned file; skin-less upload → no file → the swap clears
+			// the old one naturally.
+			if (keepManualSkin) {
+				const src = join(finalDir, 'skin.css');
+				if (existsSync(src)) {
+					cpSync(src, join(stagingDir, 'skin.css'));
+				}
+			} else if (skinCss) {
 				writeFileSync(join(stagingDir, 'skin.css'), skinCss, 'utf8');
 			}
 
@@ -421,9 +439,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		// Cover columns are deliberately NOT in updateWork: they follow the
 		// precedence rule (manual wins), not the metadata refresh.
 		const setCover = db.prepare(`UPDATE works SET cover_path = ?, cover_source = ? WHERE id = ?`);
-		// Skins are ingest-owned (no manual variant) — they always track the
-		// incoming EPUB: present → set, absent → clear.
-		const setSkin = db.prepare(`UPDATE works SET skin_path = ? WHERE id = ?`);
+		// Skin columns follow the covers precedence rule (WS Part 3): ingest
+		// may set/replace only when skin_source IS NOT 'manual'.
+		const setSkin = db.prepare(`UPDATE works SET skin_path = ?, skin_source = ? WHERE id = ?`);
 		const updateChapter = db.prepare(
 			`UPDATE chapters SET title = ?, content_path = ?, kind = ?, content_hash = ? WHERE id = ?`
 		);
@@ -516,8 +534,17 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// work_authors is ingest-owned, so a full rewrite is safe.
 				syncWorkAuthors(db, finalId, workAuthors);
 
-				// WS Part 2: skin tracks the incoming EPUB unconditionally.
-				setSkin.run(skinCss ? join(finalDir, 'skin.css') : null, finalId);
+				// WS Part 2/3: an EXTRACTED skin tracks the incoming EPUB
+				// (present → set, absent → clear); a pasted skin is untouchable
+				// (its file already carried into staging above) — the covers
+				// precedence rule, applied to skins.
+				if (!keepManualSkin) {
+					setSkin.run(
+						skinCss ? join(finalDir, 'skin.css') : null,
+						skinCss ? 'epub' : null,
+						finalId
+					);
+				}
 
 				// Cover Art Part A: extracted covers track the incoming EPUB;
 				// manual covers are untouchable (file already carried into
@@ -590,8 +617,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		}
 	}
 	const insertWork = db.prepare(
-		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source, cover_path, cover_source, skin_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source, cover_path, cover_source, skin_path, skin_source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
@@ -612,7 +639,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				source,
 				coverPath,
 				coverPath ? 'epub' : null,
-				skinPath
+				skinPath,
+				skinPath ? 'epub' : null
 			);
 			for (const ch of parsed.chapters) {
 				// Stamp per-chapter content_hash from creation so future

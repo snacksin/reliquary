@@ -21,6 +21,7 @@
 	import { inContinueReading, isFinished, resumeChapter, continueHref } from '$lib/reading';
 	import SeriesAssign from '$lib/SeriesAssign.svelte';
 	import NotesEditor from '$lib/NotesEditor.svelte';
+	import SkinEditor from '$lib/SkinEditor.svelte';
 	import WorkPersonalTags from '$lib/WorkPersonalTags.svelte';
 	import { Heart, Star } from 'lucide-svelte';
 	import type { PageProps } from './$types';
@@ -120,6 +121,11 @@
 	// Soft-trash state (M2.3 Step 5). When trashed, the page shows a
 	// banner with a Restore action instead of the Move-to-Trash button.
 	const isTrashed = $derived(data.work.trashed_at != null);
+
+	// WS Part 3: the "Creator's style" paste box exists only where a live
+	// #workskin block exists to copy from — works hosted on AO3 (native
+	// downloads AND FicHub-fetched AO3 fics; both point at an AO3 work page).
+	const isAo3Source = $derived(data.work.source === 'ao3' || data.work.source === 'fichub-ao3');
 	let restoring = $state(false);
 	let restoreError = $state<string | null>(null);
 
@@ -601,6 +607,16 @@
 			vocab={data.personalTagVocab}
 		/>
 	{/key}
+
+	<!-- Creator's style paste box (WS Part 3) — AO3-source works only (the
+	     skin lives solely on the live AO3 page; no download carries it), and
+	     hidden while trashed (read-only surface, like the cover controls).
+	     Keyed like the neighbors so the baseline re-seeds between fics. -->
+	{#if isAo3Source && !isTrashed}
+		{#key data.work.id}
+			<SkinEditor workId={data.work.id} hasSkin={data.work.has_skin ?? false} />
+		{/key}
+	{/if}
 
 	{#if hasPreface}
 		<p class="wrapper-link">

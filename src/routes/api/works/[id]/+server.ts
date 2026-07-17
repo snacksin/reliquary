@@ -10,6 +10,7 @@ export const GET: RequestHandler = ({ params }) => {
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
 			   w.favorited_at, w.trashed_at, w.read_at, w.chapters_updated_at, w.cover_path, w.skin_path,
+			   w.source,
 			   rp.last_chapter, rp.last_scroll_y,
 			   rp.max_read_chapter AS last_max_read_chapter,
 			   rp.dismissed_at AS last_dismissed_at,
@@ -58,6 +59,7 @@ export const GET: RequestHandler = ({ params }) => {
 				authors: string;
 				cover_path: string | null;
 				skin_path: string | null;
+				source: string | null;
 		  }
 		| undefined;
 
@@ -104,6 +106,10 @@ export const GET: RequestHandler = ({ params }) => {
 		// WS Part 2: does this work carry a creator stylesheet? Drives the
 		// reader's #workskin <link> + the settings-panel toggle.
 		has_skin: row.skin_path !== null,
+		// WS Part 3: the MS classification, detail feed only — gates the
+		// "Creator's style" paste box to AO3-source works (the only place a
+		// live #workskin block exists to copy from).
+		source: row.source,
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:

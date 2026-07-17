@@ -156,6 +156,30 @@ function sanitizeRules(css: string, scope: boolean): string {
 }
 
 /**
+ * WS Part 3 — forgiving paste extraction. AO3 ships the real work skin only
+ * in the live page's <style> block, so the paste box accepts whatever the
+ * user managed to copy: bare CSS, a full <style>…</style> block, or an
+ * entire view-source paste. This helper reduces any of those to a raw CSS
+ * candidate for sanitizeAndScopeSkin (which stays the single gate — the
+ * output here is NEVER stored directly).
+ */
+export function extractPastedSkin(pasted: string | null): string | null {
+	if (!pasted || pasted.trim() === '') return null;
+	// <style> blocks present (a copied block or a whole page source): use the
+	// block bodies. Prefer the ones mentioning #workskin — that's AO3's work
+	// skin — falling back to all of them (the sanitizer scopes whatever
+	// survives, so a skinless page source just yields nothing usable).
+	const blocks = [...pasted.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+	if (blocks.length > 0) {
+		const workskin = blocks.filter((b) => b.includes('#workskin'));
+		return (workskin.length > 0 ? workskin : blocks).join('\n');
+	}
+	// No complete block → treat as bare CSS, shedding any stray unpaired
+	// <style> / </style> tag from a partial copy.
+	return pasted.replace(/<\/?style\b[^>]*>/gi, '');
+}
+
+/**
  * The one public entry: raw collected CSS in, stored skin out.
  * Null when nothing survives (or input is empty/oversized).
  */
