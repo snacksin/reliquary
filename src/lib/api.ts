@@ -113,6 +113,12 @@ export type Work = {
 	 * /api/works/{id}/skin). Detail feed only; drives the reader.
 	 */
 	has_skin?: boolean;
+	/**
+	 * WS Part 3: the Multi-Source classification ('ao3', 'fichub-ao3',
+	 * 'fichub-ffn', 'fichub-other', 'unknown'). Detail feed only — gates the
+	 * detail page's "Creator's style" paste box to AO3-source works.
+	 */
+	source?: string | null;
 };
 
 /** The cover image URL for a work (versioned so replacements bypass caches). */
@@ -166,6 +172,27 @@ export async function setCoverFromImage(
 	});
 	if (!res.ok) throw new Error(await extractError(res));
 	return res.json();
+}
+
+/**
+ * Paste the creator's style for a work (WS Part 3). `css` is whatever the
+ * user copied — bare CSS, a <style> block, or a whole page source; the
+ * server extracts, sanitizes and #workskin-scopes it through the #82
+ * pipeline. Rejects (with a human message) when nothing usable survives.
+ */
+export async function saveSkin(workId: string, css: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/skin`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ css })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Remove the work's creator style — back to the no-skin state (idempotent). */
+export async function clearSkin(workId: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/skin`, { method: 'DELETE' });
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 /** One parsed byline author: AO3 account + pseud (null when unpseuded). */
