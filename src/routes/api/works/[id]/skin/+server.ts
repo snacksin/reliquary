@@ -49,6 +49,11 @@ const MAX_PASTE_BYTES = 5 * 1024 * 1024;
  * model), so a re-paste replaces. A paste with no usable CSS after the
  * sanitizer → 400 with a human message, nothing stored. The skin is never
  * hashed (#82 invariant) — dedup identity is untouched.
+ *
+ * Stamps skin_source='manual' (migration 0026) — the covers precedence
+ * rule: ingest may set/replace a skin only when skin_source IS NOT
+ * 'manual', and update-in-place carries the pasted file through the dir
+ * swap, so a re-dropped EPUB never overwrites a paste.
  */
 export const PUT: RequestHandler = async ({ params, request }) => {
 	const payload = (await request.json().catch(() => null)) as { css?: unknown } | null;
@@ -75,7 +80,10 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	if (!existsSync(workDir)) throw error(404, 'work not found');
 	const skinPath = join(workDir, 'skin.css');
 	writeFileSync(skinPath, skinCss, 'utf8');
-	db.prepare(`UPDATE works SET skin_path = ? WHERE id = ?`).run(skinPath, params.id);
+	db.prepare(`UPDATE works SET skin_path = ?, skin_source = 'manual' WHERE id = ?`).run(
+		skinPath,
+		params.id
+	);
 	return new Response(null, { status: 204 });
 };
 
@@ -83,8 +91,10 @@ export const PUT: RequestHandler = async ({ params, request }) => {
  * `DELETE /api/works/[id]/skin` — clear back to the no-skin state (WS
  * Part 3). Removes the stored skin.css (best-effort — whether it came from
  * ingest extraction or a paste, skin_path is its only owner) and nulls
- * skin_path, so the reader drops the <link> and the settings toggle
- * disappears. Idempotent.
+ * BOTH skin columns, so the reader drops the <link> and the settings
+ * toggle disappears — and the work returns to EXTRACTABLE: with
+ * skin_source no longer 'manual', a later re-drop may set an 'epub' skin
+ * again. Idempotent.
  */
 export const DELETE: RequestHandler = ({ params }) => {
 	const db = getDb();
@@ -100,6 +110,6 @@ export const DELETE: RequestHandler = ({ params }) => {
 			/* already gone — fine */
 		}
 	}
-	db.prepare(`UPDATE works SET skin_path = NULL WHERE id = ?`).run(params.id);
+	db.prepare(`UPDATE works SET skin_path = NULL, skin_source = NULL WHERE id = ?`).run(params.id);
 	return new Response(null, { status: 204 });
 };
