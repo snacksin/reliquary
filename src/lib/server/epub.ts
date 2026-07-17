@@ -60,6 +60,15 @@ export type ParsedEpub = {
 	 * name). Plays NO part in computeContentHash inputs.
 	 */
 	coverFilename: string | null;
+	/**
+	 * WS Part 2: the work's creator stylesheet(s), RAW and concatenated —
+	 * manifest CSS files (the Calibre-remnant shape) plus inline <style>
+	 * blocks from chapter heads (the original-AO3 shape). Null when the EPUB
+	 * ships none. Sanitization + #workskin scoping happen at ingest
+	 * (src/lib/server/skin.ts) — the parser only collects. Never a
+	 * computeContentHash input.
+	 */
+	skinCss: string | null;
 };
 
 /**
@@ -654,13 +663,24 @@ type EpubInternals = {
  * sentinel exactly as epub2 would emit it, so the existing post-processing
  * downstream is unchanged.
  */
-async function chapterHtmlFromBook(book: EPub, id: string): Promise<string> {
+async function chapterHtmlFromBook(book: EPub, id: string, styleSink?: string[]): Promise<string> {
 	const internals = book as unknown as EpubInternals;
 	let str = await withTimeout(
 		internals.getChapterRawAsync(id),
 		EPUB_CALL_TIMEOUT_MS,
 		`getChapterRawAsync(${id})`
 	);
+
+	// WS Part 2: capture inline <style> blocks BEFORE the body cut below —
+	// the original-AO3 EPUB shape carries the work skin in each chapter
+	// file's <head>, which the body extraction would otherwise discard
+	// (and the later style-strip removes in-body ones from the OUTPUT; this
+	// sink only observes). Linebreaks are still raw here.
+	if (styleSink) {
+		for (const m of str.matchAll(/<style[^>]*?>([\s\S]*?)<\/style[^>]*?>/gi)) {
+			if (m[1].trim()) styleSink.push(m[1]);
+		}
+	}
 
 	const meta = internals.manifest[id];
 	const manifest = internals.manifest;
@@ -788,6 +808,9 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// content heuristic below can inspect it. `null` for id-less items
 		// (which never become chapters). Same epub2 calls + timeout + image
 		// rewrite as before — just hoisted ahead of classification.
+		// WS Part 2: inline <style> sink for the original-AO3 shape (filled by
+		// chapterHtmlFromBook during the raw reads below).
+		const inlineStyles: string[] = [];
 		const htmls: (string | null)[] = [];
 		for (let i = 0; i < flow.length; i++) {
 			const f = flow[i];
@@ -805,7 +828,7 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			// or hanging forever.
 			let rawHtml: string;
 			try {
-				rawHtml = await chapterHtmlFromBook(book, f.id);
+				rawHtml = await chapterHtmlFromBook(book, f.id, inlineStyles);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				throw new Error(
@@ -976,6 +999,40 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			}
 		}
 
+		// WS Part 2: creator stylesheet collection. Manifest CSS files (the
+		// Calibre-remnant shape: stylesheet.css / page_styles.css) read via
+		// epub2's ZIP-safe getFile, in manifest order, then any inline <style>
+		// blocks captured from chapter heads (the original-AO3 shape). RAW
+		// here — the ingest sanitizes + scopes before anything is stored.
+		const cssEntries = Object.entries(
+			(book.manifest ?? {}) as Record<string, { href?: string; 'media-type'?: string }>
+		).filter(
+			([, m]) => m['media-type'] === 'text/css' || (m.href ?? '').toLowerCase().endsWith('.css')
+		);
+		const cssParts: string[] = [];
+		for (const [cssId] of cssEntries) {
+			try {
+				const buf = await withTimeout<Buffer>(
+					new Promise((resolve, reject) =>
+						(
+							book as unknown as {
+								getFile(id: string, cb: (e: Error | null, d?: Buffer) => void): void;
+							}
+						).getFile(cssId, (e, d) => (e || !d ? reject(e ?? new Error('empty')) : resolve(d)))
+					),
+					EPUB_CALL_TIMEOUT_MS,
+					`getFile(${cssId})`
+				);
+				const text = buf.toString('utf8').trim();
+				if (text) cssParts.push(text);
+			} catch {
+				// unreadable stylesheet → skip; a missing skin is a missing
+				// skin, not a missing fic (the image-extraction rule).
+			}
+		}
+		cssParts.push(...inlineStyles);
+		const skinCss = cssParts.length > 0 ? cssParts.join('\n\n') : null;
+
 		// Cover identification (Cover Art Part A). The image is already IN
 		// `images` (extracted above by the existing pipeline) — this only
 		// decides which one is the cover. Ingest points works.cover_path at
@@ -986,7 +1043,7 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			images
 		);
 
-		return { title, author, summary, chapters, chapterCount, images, tags, coverFilename };
+		return { title, author, summary, chapters, chapterCount, images, tags, coverFilename, skinCss };
 	} finally {
 		await unlink(tmpPath).catch(() => {});
 	}

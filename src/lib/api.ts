@@ -107,6 +107,12 @@ export type Work = {
 	 */
 	has_cover?: boolean;
 	cover_v?: string | null;
+	/**
+	 * WS Part 2: whether this work carries a creator stylesheet (extracted,
+	 * sanitized + #workskin-scoped at ingest; served at
+	 * /api/works/{id}/skin). Detail feed only; drives the reader.
+	 */
+	has_skin?: boolean;
 };
 
 /** The cover image URL for a work (versioned so replacements bypass caches). */

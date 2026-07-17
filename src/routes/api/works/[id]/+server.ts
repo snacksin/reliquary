@@ -9,7 +9,7 @@ export const GET: RequestHandler = ({ params }) => {
 		.prepare(
 			`SELECT
 			   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
-			   w.favorited_at, w.trashed_at, w.read_at, w.chapters_updated_at, w.cover_path,
+			   w.favorited_at, w.trashed_at, w.read_at, w.chapters_updated_at, w.cover_path, w.skin_path,
 			   rp.last_chapter, rp.last_scroll_y,
 			   rp.max_read_chapter AS last_max_read_chapter,
 			   rp.dismissed_at AS last_dismissed_at,
@@ -57,6 +57,7 @@ export const GET: RequestHandler = ({ params }) => {
 				personal_tags: string;
 				authors: string;
 				cover_path: string | null;
+				skin_path: string | null;
 		  }
 		| undefined;
 
@@ -100,6 +101,9 @@ export const GET: RequestHandler = ({ params }) => {
 		// Cover Art Part A: presence + cache-bust token (never the disk path).
 		has_cover: row.cover_path !== null,
 		cover_v: row.cover_path?.split('/').pop() ?? null,
+		// WS Part 2: does this work carry a creator stylesheet? Drives the
+		// reader's #workskin <link> + the settings-panel toggle.
+		has_skin: row.skin_path !== null,
 		chapters_updated_at: row.chapters_updated_at,
 		has_history: hasHistory,
 		last_read:

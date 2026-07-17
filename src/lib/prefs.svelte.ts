@@ -151,3 +151,44 @@ export const widthPref = makePref<WidthToken>({
 	cssVar: '--reader-max-width',
 	toCss: (t) => WIDTH_VALUES[t]
 });
+
+/**
+ * WS Part 2 — per-fic creator-skin visibility (the "Hide creator's style"
+ * toggle, AO3 parity). Skins are ON by default in every theme; hiding is
+ * the per-fic escape hatch (e.g. a light-background skin in dark mode),
+ * persisted per work in localStorage.
+ *
+ * The reader registers the current work here on mount (client-only —
+ * never during SSR, so no cross-request module-state leakage) and the
+ * global SettingsPanel renders the toggle whenever a skinned work is
+ * registered. SSR always renders the skin <link> (default-on, no flash
+ * for the common case); a saved "hidden" pref applies at hydration.
+ */
+let skinCtx = $state<{ workId: string; hasSkin: boolean; hidden: boolean } | null>(null);
+
+export const skinPref = {
+	get ctx() {
+		return skinCtx;
+	},
+	register(workId: string, hasSkin: boolean) {
+		let hidden = false;
+		try {
+			hidden = localStorage.getItem(`prefs:skin:hide:${workId}`) === '1';
+		} catch {
+			/* localStorage unavailable → default (shown) */
+		}
+		skinCtx = { workId, hasSkin, hidden };
+	},
+	clear() {
+		skinCtx = null;
+	},
+	setHidden(hidden: boolean) {
+		if (!skinCtx) return;
+		skinCtx = { ...skinCtx, hidden };
+		try {
+			localStorage.setItem(`prefs:skin:hide:${skinCtx.workId}`, hidden ? '1' : '0');
+		} catch {
+			/* non-persistent, still applies for the session */
+		}
+	}
+};
