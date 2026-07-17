@@ -108,7 +108,7 @@
 
 <svelte:head><title>Reliquary</title></svelte:head>
 
-<Reader html={data.html} workId={data.workId} />
+<Reader html={data.html} workId={data.workId} hasSkin={data.hasSkin} />
 
 {#if hasPrev || hasNext || prevParts.length > 0 || nextParts.length > 0}
 	<nav class="chapter-nav" aria-label="Chapter navigation">

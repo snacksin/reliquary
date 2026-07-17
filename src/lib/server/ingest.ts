@@ -15,6 +15,7 @@ import {
 import { computeContentHash, countWords, hashChapterContent } from './identity';
 import { syncWorkSeries } from './series';
 import { extractWorkAuthors, syncWorkAuthors } from './authors';
+import { sanitizeAndScopeSkin } from './skin';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -242,6 +243,11 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// rows and every author surface falls back to works.author unchanged.
 	// Deliberately NOT part of the content hash — computeContentHash inputs
 	// above are untouched (#64 hash-from-raw stays byte-identical).
+	// WS Part 2: sanitize + #workskin-scope the creator CSS once, up front —
+	// what's stored is only ever this cleaned form. Null when the EPUB ships
+	// no CSS or nothing survives the scrub. Not a hash input.
+	const skinCss = sanitizeAndScopeSkin(parsed.skinCss);
+
 	const summaryChapter = parsed.chapters.find((c) => c.kind === 'summary');
 	const workAuthors =
 		source === 'ao3'
@@ -348,6 +354,13 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				cpSync(existingHistoryDir, stagingHistoryDir, { recursive: true });
 			}
 
+			// WS Part 2: the incoming EPUB's (sanitized) skin rides the staging
+			// dir like every other ingest-owned file. Skin-less upload → no
+			// file → the swap clears the old one naturally.
+			if (skinCss) {
+				writeFileSync(join(stagingDir, 'skin.css'), skinCss, 'utf8');
+			}
+
 			// Carry a manual cover file forward (same reasoning as _history).
 			// cover_path is cwd-relative under finalDir; re-root it to staging.
 			if (keepManualCover && existingCover.cover_path) {
@@ -408,6 +421,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		// Cover columns are deliberately NOT in updateWork: they follow the
 		// precedence rule (manual wins), not the metadata refresh.
 		const setCover = db.prepare(`UPDATE works SET cover_path = ?, cover_source = ? WHERE id = ?`);
+		// Skins are ingest-owned (no manual variant) — they always track the
+		// incoming EPUB: present → set, absent → clear.
+		const setSkin = db.prepare(`UPDATE works SET skin_path = ? WHERE id = ?`);
 		const updateChapter = db.prepare(
 			`UPDATE chapters SET title = ?, content_path = ?, kind = ?, content_hash = ? WHERE id = ?`
 		);
@@ -500,6 +516,9 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				// work_authors is ingest-owned, so a full rewrite is safe.
 				syncWorkAuthors(db, finalId, workAuthors);
 
+				// WS Part 2: skin tracks the incoming EPUB unconditionally.
+				setSkin.run(skinCss ? join(finalDir, 'skin.css') : null, finalId);
+
 				// Cover Art Part A: extracted covers track the incoming EPUB;
 				// manual covers are untouchable (file already carried into
 				// staging above). A coverless re-drop CLEARS a prior extracted
@@ -560,9 +579,19 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// member of parsed.images written by writeWorkFiles above) — cover_path
 	// just points at it, cwd-relative like every content_path.
 	const coverPath = parsed.coverFilename ? join(workDir, 'images', parsed.coverFilename) : null;
+	// WS Part 2: the sanitized skin file (written just below, with the same
+	// error handling as the chapter files).
+	const skinPath = skinCss ? join(workDir, 'skin.css') : null;
+	if (skinCss) {
+		try {
+			writeFileSync(join(workDir, 'skin.css'), skinCss, 'utf8');
+		} catch (e) {
+			console.error(`[ingest] skin write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
+		}
+	}
 	const insertWork = db.prepare(
-		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source, cover_path, cover_source)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO works (id, title, author, summary, chapter_count, word_count, source_url, content_hash, source, cover_path, cover_source, skin_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 	const insertChapter = db.prepare(
 		`INSERT INTO chapters (id, work_id, number, title, content_path, kind, content_hash)
@@ -582,7 +611,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				contentHash,
 				source,
 				coverPath,
-				coverPath ? 'epub' : null
+				coverPath ? 'epub' : null,
+				skinPath
 			);
 			for (const ch of parsed.chapters) {
 				// Stamp per-chapter content_hash from creation so future

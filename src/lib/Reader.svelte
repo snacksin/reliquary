@@ -1,6 +1,31 @@
 <script lang="ts">
-	let { html, workId }: { html: string; workId: string } = $props();
+	import { skinPref } from '$lib/prefs.svelte';
+
+	let {
+		html,
+		workId,
+		hasSkin = false
+	}: { html: string; workId: string; hasSkin?: boolean } = $props();
+
+	// WS Part 2: register the current work with the global settings panel
+	// (client-only — SSR never mutates the module store) so it can offer the
+	// per-fic "Hide creator's style" toggle. Cleared on unmount/navigation.
+	$effect(() => {
+		skinPref.register(workId, hasSkin);
+		return () => skinPref.clear();
+	});
+
+	// Skins are ON by default in ALL themes; the toggle is the escape hatch.
+	// SSR renders the link whenever the work has a skin (default state); a
+	// saved per-fic "hidden" pref applies at hydration via the store.
+	const showSkin = $derived(hasSkin && !(skinPref.ctx?.workId === workId && skinPref.ctx.hidden));
 </script>
+
+<svelte:head>
+	{#if showSkin}
+		<link rel="stylesheet" href="/api/works/{workId}/skin" />
+	{/if}
+</svelte:head>
 
 <!--
 	Back-to-detail button: fixed top-left on every reader surface
@@ -14,7 +39,14 @@
 </a>
 
 <article class="reader">
-	{@html html}
+	<!-- WS Part 2: the #workskin container — the AO3 idiom. Every stored
+	     skin selector is prefixed with #workskin at ingest, so creator CSS
+	     can only ever style THIS subtree; relative+isolate keep absolute
+	     positioning and z-index stacked inside the fic content. Native
+	     <details> folds work here with or without a skin (#81). -->
+	<div id="workskin">
+		{@html html}
+	</div>
 </article>
 
 <style>
@@ -68,5 +100,9 @@
 	}
 	.reader :global(a:visited) {
 		color: var(--reader-link-visited);
+	}
+	#workskin {
+		position: relative;
+		isolation: isolate;
 	}
 </style>

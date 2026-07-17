@@ -18,6 +18,7 @@
 		WIDTH_LABELS,
 		type WidthToken
 	} from '$lib/prefs.svelte';
+	import { skinPref } from '$lib/prefs.svelte';
 
 	/**
 	 * Reader settings panel. Theme + four reader-style prefs each as
@@ -86,6 +87,24 @@
 				{/each}
 			</fieldset>
 
+			<!-- WS Part 2: per-fic creator-skin toggle (AO3's "Hide creator's
+			     style"). Only rendered while a skinned work's reader is open —
+			     the reader registers itself in skinPref. Applies in ALL themes;
+			     this is the per-fic escape hatch, persisted per work. -->
+			{#if skinPref.ctx?.hasSkin}
+				<fieldset>
+					<legend>Creator's style</legend>
+					<label class="option">
+						<input
+							type="checkbox"
+							checked={skinPref.ctx.hidden}
+							onchange={() => skinPref.setHidden(!skinPref.ctx!.hidden)}
+						/>
+						<span>Hide creator's style</span>
+					</label>
+				</fieldset>
+			{/if}
+
 			<fieldset class="select-row">
 				<legend>Font</legend>
 				<select
@@ -114,8 +133,7 @@
 				<legend>Line height</legend>
 				<select
 					value={lineHeightPref.value}
-					onchange={(e) =>
-						(lineHeightPref.value = e.currentTarget.value as LineHeightToken)}
+					onchange={(e) => (lineHeightPref.value = e.currentTarget.value as LineHeightToken)}
 				>
 					{#each LINE_HEIGHT_TOKENS as t (t)}
 						<option value={t}>{LINE_HEIGHT_LABELS[t]}</option>

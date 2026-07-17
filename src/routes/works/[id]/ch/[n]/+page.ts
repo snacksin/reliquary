@@ -19,6 +19,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
 			workId: params.id,
 			chapterNumber: Number(params.n),
 			chapterCount: work.chapter_count,
+			// WS Part 2: creator-skin presence for the reader's #workskin link.
+			hasSkin: work.has_skin ?? false,
 			seriesNav
 		};
 	} catch (e) {
