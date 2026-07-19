@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { skinPref } from '$lib/prefs.svelte';
+	import { skinsPref } from '$lib/prefs.svelte';
 
 	let {
 		html,
@@ -7,23 +7,34 @@
 		hasSkin = false
 	}: { html: string; workId: string; hasSkin?: boolean } = $props();
 
-	// WS Part 2: register the current work with the global settings panel
-	// (client-only — SSR never mutates the module store) so it can offer the
-	// per-fic "Hide creator's style" toggle. Cleared on unmount/navigation.
-	$effect(() => {
-		skinPref.register(workId, hasSkin);
-		return () => skinPref.clear();
-	});
+	// Code Health 1.5: skins are gated by the GLOBAL "Hide creator's styles"
+	// pref (supersedes the WS per-fic toggle). Skins ON by default in ALL
+	// themes. During SSR the pref reads its default ('show'), so a skinned
+	// work always server-renders its <link> — the common case paints styled
+	// with no flash — and the gate script below covers the saved-hide case.
+	const showSkin = $derived(hasSkin && skinsPref.value === 'show');
 
-	// Skins are ON by default in ALL themes; the toggle is the escape hatch.
-	// SSR renders the link whenever the work has a skin (default state); a
-	// saved per-fic "hidden" pref applies at hydration via the store.
-	const showSkin = $derived(hasSkin && !(skinPref.ctx?.workId === workId && skinPref.ctx.hidden));
+	// Pre-hydration anti-flash for a saved "hide": SSR can't read
+	// localStorage, so the link above is already in the document — this gate
+	// rides immediately after it and disables it BEFORE first paint (the
+	// app.html boot script runs too early: the link doesn't exist yet at
+	// that point in the parse). Inert on client-side navigations — {@html}
+	// inserts scripts without executing them — where the reactive `showSkin`
+	// already decides. Keep the key in sync with skinsPref in prefs.svelte.ts.
+	// (Concatenated closer so the literal never contains "</script"— that
+	// sequence would terminate this component's script block during parse.)
+	const SKIN_GATE =
+		`<script>try{if(localStorage.getItem('prefs:reader:skins')==='hide')` +
+		`{var l=document.getElementById('skin-css');if(l)l.disabled=true}}catch(e){}</` +
+		`script>`;
 </script>
 
 <svelte:head>
 	{#if showSkin}
-		<link rel="stylesheet" href="/api/works/{workId}/skin" />
+		<link id="skin-css" rel="stylesheet" href="/api/works/{workId}/skin" />
+		<!-- Static gate script above — no user input involved. -->
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		{@html SKIN_GATE}
 	{/if}
 </svelte:head>
 

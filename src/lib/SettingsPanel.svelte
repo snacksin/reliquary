@@ -16,9 +16,9 @@
 		widthPref,
 		WIDTH_TOKENS,
 		WIDTH_LABELS,
-		type WidthToken
+		type WidthToken,
+		skinsPref
 	} from '$lib/prefs.svelte';
-	import { skinPref } from '$lib/prefs.svelte';
 
 	/**
 	 * Reader settings panel. Theme + four reader-style prefs each as
@@ -87,23 +87,21 @@
 				{/each}
 			</fieldset>
 
-			<!-- WS Part 2: per-fic creator-skin toggle (AO3's "Hide creator's
-			     style"). Only rendered while a skinned work's reader is open —
-			     the reader registers itself in skinPref. Applies in ALL themes;
-			     this is the per-fic escape hatch, persisted per work. -->
-			{#if skinPref.ctx?.hasSkin}
-				<fieldset>
-					<legend>Creator's style</legend>
-					<label class="option">
-						<input
-							type="checkbox"
-							checked={skinPref.ctx.hidden}
-							onchange={() => skinPref.setHidden(!skinPref.ctx!.hidden)}
-						/>
-						<span>Hide creator's style</span>
-					</label>
-				</fieldset>
-			{/if}
+			<!-- Code Health 1.5: GLOBAL "Hide creator's styles" — an app-wide
+			     reading-mode pref like theme/font (supersedes the WS per-fic
+			     toggle), so it's always visible, not just while a skinned
+			     reader is open. Applies in ALL themes; default = show. -->
+			<fieldset>
+				<legend>Creator's styles</legend>
+				<label class="option">
+					<input
+						type="checkbox"
+						checked={skinsPref.value === 'hide'}
+						onchange={(e) => (skinsPref.value = e.currentTarget.checked ? 'hide' : 'show')}
+					/>
+					<span>Hide creator's styles</span>
+				</label>
+			</fieldset>
 
 			<fieldset class="select-row">
 				<legend>Font</legend>

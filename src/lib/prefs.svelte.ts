@@ -18,8 +18,10 @@ interface PrefDef<T extends string> {
 	key: string;
 	defaultValue: T;
 	options: readonly T[];
-	cssVar: string;
-	toCss: (token: T) => string;
+	/** Omit both for prefs that gate markup instead of driving a CSS var
+	 *  (the global skins toggle) — persistence + hydration are identical. */
+	cssVar?: string;
+	toCss?: (token: T) => string;
 }
 
 function makePref<T extends string>(def: PrefDef<T>): { value: T } {
@@ -52,7 +54,7 @@ function makePref<T extends string>(def: PrefDef<T>): { value: T } {
 			} catch {
 				// Persistence failed; current session still reflects the change
 			}
-			if (typeof document !== 'undefined') {
+			if (def.cssVar && def.toCss && typeof document !== 'undefined') {
 				document.documentElement.style.setProperty(def.cssVar, def.toCss(v));
 			}
 		}
@@ -152,43 +154,40 @@ export const widthPref = makePref<WidthToken>({
 	toCss: (t) => WIDTH_VALUES[t]
 });
 
-/**
- * WS Part 2 — per-fic creator-skin visibility (the "Hide creator's style"
- * toggle, AO3 parity). Skins are ON by default in every theme; hiding is
- * the per-fic escape hatch (e.g. a light-background skin in dark mode),
- * persisted per work in localStorage.
- *
- * The reader registers the current work here on mount (client-only —
- * never during SSR, so no cross-request module-state leakage) and the
- * global SettingsPanel renders the toggle whenever a skinned work is
- * registered. SSR always renders the skin <link> (default-on, no flash
- * for the common case); a saved "hidden" pref applies at hydration.
- */
-let skinCtx = $state<{ workId: string; hasSkin: boolean; hidden: boolean } | null>(null);
+// Creator skins (global) ----------------------------------------------
 
-export const skinPref = {
-	get ctx() {
-		return skinCtx;
-	},
-	register(workId: string, hasSkin: boolean) {
-		let hidden = false;
-		try {
-			hidden = localStorage.getItem(`prefs:skin:hide:${workId}`) === '1';
-		} catch {
-			/* localStorage unavailable → default (shown) */
+export const SKIN_TOKENS = ['show', 'hide'] as const;
+export type SkinToken = (typeof SKIN_TOKENS)[number];
+
+/**
+ * Code Health 1.5 — GLOBAL "Hide creator's styles", superseding the WS
+ * per-fic toggle (Allie 2026-07-12: skins-or-not is a reading-mode choice
+ * like theme/font — one switch for the whole library; the per-fic-override
+ * variant was declined). Default = show, preserving the skins-on-by-default
+ * behavior in every theme.
+ *
+ * No cssVar: this pref gates the reader's skin <link> in markup, not a CSS
+ * value. Pre-hydration anti-flash is handled by an inline gate script that
+ * rides immediately AFTER the link in <svelte:head> (Reader.svelte) — the
+ * app.html boot script can't do it, since it runs before the link exists
+ * in the DOM. Keep the key in sync with that gate script.
+ */
+export const skinsPref = makePref<SkinToken>({
+	key: 'prefs:reader:skins',
+	defaultValue: 'show',
+	options: SKIN_TOKENS
+});
+
+// One-time hygiene: the superseded per-fic keys (prefs:skin:hide:<id>)
+// are never read again — sweep them so they don't sit in localStorage
+// forever. Client-only; module-load is the natural "once per boot".
+if (typeof window !== 'undefined') {
+	try {
+		for (let i = localStorage.length - 1; i >= 0; i--) {
+			const k = localStorage.key(i);
+			if (k?.startsWith('prefs:skin:hide:')) localStorage.removeItem(k);
 		}
-		skinCtx = { workId, hasSkin, hidden };
-	},
-	clear() {
-		skinCtx = null;
-	},
-	setHidden(hidden: boolean) {
-		if (!skinCtx) return;
-		skinCtx = { ...skinCtx, hidden };
-		try {
-			localStorage.setItem(`prefs:skin:hide:${skinCtx.workId}`, hidden ? '1' : '0');
-		} catch {
-			/* non-persistent, still applies for the session */
-		}
+	} catch {
+		/* localStorage unavailable — nothing to sweep */
 	}
-};
+}
