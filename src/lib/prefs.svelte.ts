@@ -25,30 +25,35 @@ interface PrefDef<T extends string> {
 }
 
 function makePref<T extends string>(def: PrefDef<T>): { value: T } {
-	let _value = $state<T>(def.defaultValue);
-	let _hydrated = false;
-
-	function ensureHydrated() {
-		if (_hydrated || typeof window === 'undefined') return;
+	// Hydrate EAGERLY at module init, never lazily in the getter. The lazy
+	// version mutated $state on first read — and when that first read
+	// happened inside a $derived (the reader's showSkin, on an SPA nav from
+	// a page that never read the pref), Svelte threw state_unsafe_mutation,
+	// the localStorage try/catch silently swallowed it, and the _hydrated
+	// latch froze the DEFAULT for the whole session (#84's "skin renders
+	// despite global hide" bug). Module init runs outside any reactive
+	// context, so this read is always safe; SSR keeps the default (no
+	// localStorage server-side), and the getter is now a pure $state read
+	// every component can safely derive from.
+	let initial = def.defaultValue;
+	if (typeof window !== 'undefined') {
 		try {
 			const v = localStorage.getItem(def.key);
 			if (v && (def.options as readonly string[]).includes(v)) {
-				_value = v as T;
+				initial = v as T;
 			}
 		} catch {
 			// localStorage unavailable; default stays
 		}
-		_hydrated = true;
 	}
+	let _value = $state<T>(initial);
 
 	return {
 		get value(): T {
-			ensureHydrated();
 			return _value;
 		},
 		set value(v: T) {
 			_value = v;
-			_hydrated = true;
 			try {
 				localStorage.setItem(def.key, v);
 			} catch {
