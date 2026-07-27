@@ -5,7 +5,7 @@ import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
 import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
-import { backfillDecodeText } from './textdecode';
+import { backfillDecodeText, backfillFixHeadings } from './textdecode';
 import { backfillAuthorIdentity } from './authors';
 
 let cached: Database.Database | undefined;
@@ -98,6 +98,17 @@ export function getDb(): Database.Database {
 		backfillDecodeText(db);
 	} catch (e) {
 		console.error('[text-decode] failed', e);
+	}
+
+	// Collapse AO3's double-encoded entities in stored chapter-file HEADINGS
+	// (body HTML is verbatim, so the builder's artifact was stored as-is;
+	// the reader showed literal "&amp;"). Runs after backfillIdentity —
+	// identity hashes must be stamped from raw bytes before any file here
+	// changes. Idempotent + candidate-scoped via DB titles; guarded.
+	try {
+		backfillFixHeadings(db);
+	} catch (e) {
+		console.error('[heading-fix] failed', e);
 	}
 
 	// Author Identity Part A: one-shot work_authors backfill from stored

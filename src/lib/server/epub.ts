@@ -286,6 +286,35 @@ export function decodeEntities(s: string): string {
 }
 
 /**
+ * Collapse ONE level of double-encoded entities inside a chapter file's
+ * AO3 heading element (`<h2 class="heading">…</h2>`) — and nowhere else.
+ *
+ * AO3's EPUB builder re-encodes the already-HTML-encoded chapter title
+ * when rendering that heading, so a title like "The Blackwoods & The
+ * Brackens" ships as `&amp;amp;` in the body XHTML and the reader shows
+ * a literal "&amp;". (The NCX label carries only one level, which the
+ * decodeEntities call on flow.title already handles — chapters.title in
+ * the DB is clean; this artifact lives purely in the stored body HTML.)
+ *
+ * Deliberately heading-scoped: body prose is NEVER touched. An author's
+ * literal "&amp;" in prose arrives double-encoded by AO3 *on purpose*
+ * (so it displays as "&amp;") — collapsing it there would corrupt real
+ * content. The heading is machine-rendered from the title field, where
+ * double encoding is always the builder's bug, never intent.
+ *
+ * Idempotent: the collapsed text contains no `&amp;<name>;` sequences,
+ * so a second pass is a no-op — which is what lets the boot backfill
+ * re-run safely every boot (textdecode idiom).
+ */
+export function fixDoubleEncodedHeading(html: string): string {
+	return html.replace(
+		/(<h2\b[^>]*\bclass="[^"]*\bheading\b[^"]*"[^>]*>)([\s\S]*?)(<\/h2>)/i,
+		(_m, open: string, text: string, close: string) =>
+			open + text.replace(/&amp;(amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);/g, '&$1;') + close
+	);
+}
+
+/**
  * Extract AO3 preface tags from the preface chapter's HTML. AO3 wraps
  * its tag block in a `<dl>` with class either `tags` (current) or
  * `meta` (older fic ages, ~pre-2015). The structure inside is identical:
