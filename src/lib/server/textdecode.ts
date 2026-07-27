@@ -1,5 +1,7 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { Database } from 'better-sqlite3';
-import { decodeEntities } from './epub';
+import { decodeEntities, fixDoubleEncodedHeading } from './epub';
+import { hashChapterContent } from './identity';
 
 /**
  * One-shot (idempotent) backfill: decode HTML entities in already-stored
@@ -84,5 +86,66 @@ export function backfillDecodeText(db: Database): void {
 
 	if (worksFixed > 0 || authorsRekeyed > 0) {
 		console.log(`[text-decode] decoded ${worksFixed} works, re-keyed ${authorsRekeyed} authors`);
+	}
+}
+
+/**
+ * One-shot (idempotent) backfill: collapse double-encoded entities in the
+ * AO3 heading of already-stored chapter FILES — the companion to applying
+ * `fixDoubleEncodedHeading` at ingest (ingest.ts). AO3's EPUB builder
+ * double-encodes the chapter title inside `<h2 class="heading">`, and body
+ * HTML is stored verbatim, so pre-fix files render "&amp;" literally in
+ * the reader header. (chapters.title in the DB was never affected — the
+ * NCX path already decodes; this is a body-HTML artifact only.)
+ *
+ * - Candidates are scoped through the DB rather than a full file sweep:
+ *   the heading mirrors the chapter title (or, for wrappers, the work
+ *   title), so only rows whose title carries an encodable character
+ *   (& < > " ') can have the artifact — ~1% of chapter rows. Each
+ *   candidate file is read, normalized, and rewritten only on change, so
+ *   a second boot rewrites 0 files (textdecode idiom, no skip-marker).
+ * - `works.content_hash` is intentionally NOT recomputed: dedup identity
+ *   is hash-from-raw (see ingest.ts) and this pass must never move it.
+ *   `chapters.content_hash` (the per-chapter edit-detection baseline) IS
+ *   restamped for rewritten files so the stored hash keeps matching the
+ *   stored bytes; the incoming side of a future re-drop is normalized by
+ *   ingest before comparison, so both sides stay like-for-like.
+ * - `_history` archives are deliberately left untouched (archives are
+ *   immutable records — the update path never modifies them, and neither
+ *   does this). A pre-fix archived version keeps the artifact in the
+ *   history viewer; that's a display wart on frozen history, not data.
+ *
+ * Guarded by the caller; runs AFTER backfillIdentity so a hash-less work
+ * (none exist today) would get its raw-based identity hash before any
+ * file here changes.
+ */
+export function backfillFixHeadings(db: Database): void {
+	const candidates = db
+		.prepare(
+			`SELECT c.id, c.work_id, c.content_path FROM chapters c
+			  JOIN works w ON w.id = c.work_id
+			 WHERE c.title LIKE '%&%' OR c.title LIKE '%<%' OR c.title LIKE '%>%'
+			    OR c.title LIKE '%"%' OR c.title LIKE '%''%'
+			    OR w.title LIKE '%&%' OR w.title LIKE '%<%' OR w.title LIKE '%>%'
+			    OR w.title LIKE '%"%' OR w.title LIKE '%''%'`
+		)
+		.all() as { id: string; work_id: string; content_path: string }[];
+
+	const restamp = db.prepare(`UPDATE chapters SET content_hash = ? WHERE id = ?`);
+	let filesFixed = 0;
+	for (const c of candidates) {
+		try {
+			const html = readFileSync(c.content_path, 'utf8');
+			const fixed = fixDoubleEncodedHeading(html);
+			if (fixed === html) continue;
+			writeFileSync(c.content_path, fixed, 'utf8');
+			restamp.run(hashChapterContent(fixed, c.work_id), c.id);
+			filesFixed += 1;
+		} catch (e) {
+			console.error(`[heading-fix] skip ${c.content_path}:`, e instanceof Error ? e.message : e);
+		}
+	}
+	if (filesFixed > 0) {
+		console.log(`[heading-fix] normalized ${filesFixed} chapter files`);
 	}
 }

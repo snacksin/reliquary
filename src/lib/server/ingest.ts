@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from './db';
 import {
@@ -7,6 +15,7 @@ import {
 	extractSeriesEntries,
 	detectSource,
 	decodeEntities,
+	fixDoubleEncodedHeading,
 	parseEpub,
 	type ParsedChapter,
 	type ParsedEpub,
@@ -223,6 +232,18 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// key stays byte-identical to every previously-stored hash and a re-upload
 	// still matches. The decoded title/author are a display concern only.
 	const contentHash = computeContentHash(parseId, parsed.title, parsed.author, parsed.chapters);
+	// 🔴 Hash-from-raw (#64 precedent): the dedup hash above is computed on the
+	// RAW chapter HTML, BEFORE the heading normalization below — so identity
+	// keys never move and a re-upload of the same EPUB still matches every
+	// previously-stored works.content_hash. Everything downstream (staged
+	// files, per-chapter hashChapterContent stamps, edit detection) sees only
+	// the normalized form, so the stored file and the incoming side of a
+	// future re-drop always compare like-for-like (no spurious history
+	// archives).
+	parsed.chapters = parsed.chapters.map((ch) => ({
+		...ch,
+		html: fixDoubleEncodedHeading(ch.html)
+	}));
 	// Decode HTML entities in the title/author for storage + display (the EPUB
 	// `<dc:title>`/`<dc:creator>` can carry `&amp;`, `&#39;`, etc.). Mirrors how
 	// chapter titles, tags, and series names are already decoded at parse time.
@@ -413,7 +434,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				});
 			}
 		} catch (e) {
-			console.error(`[ingest] staging write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
+			console.error(
+				`[ingest] staging write failed for ${sourceLabel}:`,
+				e instanceof Error ? e.message : e
+			);
 			try {
 				rmSync(stagingDir, { recursive: true, force: true });
 			} catch {
@@ -506,7 +530,15 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 							stampEdited.run(ex.id);
 						}
 					} else {
-						insertChapter.run(randomUUID(), finalId, inc.number, inc.title, path, inc.kind, newHash);
+						insertChapter.run(
+							randomUUID(),
+							finalId,
+							inc.number,
+							inc.title,
+							path,
+							inc.kind,
+							newHash
+						);
 					}
 				}
 				// Drop existing rows whose number vanished from the new upload
@@ -558,7 +590,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 				}
 			})();
 		} catch (e) {
-			console.error(`[ingest] DB update failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
+			console.error(
+				`[ingest] DB update failed for ${sourceLabel}:`,
+				e instanceof Error ? e.message : e
+			);
 			try {
 				rmSync(stagingDir, { recursive: true, force: true });
 			} catch {
@@ -613,7 +648,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		try {
 			writeFileSync(join(workDir, 'skin.css'), skinCss, 'utf8');
 		} catch (e) {
-			console.error(`[ingest] skin write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
+			console.error(
+				`[ingest] skin write failed for ${sourceLabel}:`,
+				e instanceof Error ? e.message : e
+			);
 		}
 	}
 	const insertWork = db.prepare(
@@ -670,7 +708,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 			syncWorkAuthors(db, work_id, workAuthors);
 		})();
 	} catch (e) {
-		console.error(`[ingest] DB write failed for ${sourceLabel}:`, e instanceof Error ? e.message : e);
+		console.error(
+			`[ingest] DB write failed for ${sourceLabel}:`,
+			e instanceof Error ? e.message : e
+		);
 		cleanupWorkDir();
 		throw new IngestError('Failed to record work', 'db', { cause: e });
 	}
