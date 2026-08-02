@@ -13,14 +13,22 @@
  *
  * Usage:
  *   node scripts/cr-guard.mjs                  print projection + digest
- *   node scripts/cr-guard.mjs --save FILE      also write the snapshot
- *   node scripts/cr-guard.mjs --check FILE     compare against a snapshot;
+ *   node scripts/cr-guard.mjs --save [FILE]    write the snapshot (digest
+ *                                              line only on stdout)
+ *   node scripts/cr-guard.mjs --check [FILE]   compare against a snapshot;
  *                                              exit 1 on ANY difference
- *                                              (set OR ordering)
+ *                                              (set OR ordering), printing
+ *                                              the offending rows
  *
- * Standing procedure for any PR that adds/changes a backfill: run with
- * --save before the boot, boot the server (backfills run in getDb()),
- * run with --check after. The digests must match byte-for-byte.
+ * FILE defaults to data/.cr-guard.snapshot — inside the gitignored data/
+ * dir, so it survives between the save and the post-backfill check but
+ * can never be committed.
+ *
+ * Standing procedure for any PR that adds/changes a backfill:
+ *   node scripts/cr-guard.mjs --save
+ *   <boot the server — backfills run in getDb()>
+ *   node scripts/cr-guard.mjs --check
+ * The projection must be byte-identical.
  *
  * (Boot-time purge of >30-day trashed works is outside the contract: it
  * removes whole works. Trashed works are already excluded from CR — and
@@ -69,10 +77,21 @@ const snapshot = lines.join('\n') + '\n';
 const digest = createHash('sha256').update(snapshot).digest('hex');
 
 const mode = process.argv[2];
-const file = process.argv[3];
+const file = process.argv[3] ?? 'data/.cr-guard.snapshot';
+
+if (mode !== undefined && mode !== '--save' && mode !== '--check') {
+	console.error(`cr-guard: unknown mode ${mode} — usage: cr-guard.mjs [--save|--check] [FILE]`);
+	process.exit(2);
+}
 
 if (mode === '--check') {
-	const prev = readFileSync(file, 'utf8');
+	let prev;
+	try {
+		prev = readFileSync(file, 'utf8');
+	} catch {
+		console.error(`cr-guard: no snapshot at ${file} — run --save before the backfill boot first`);
+		process.exit(2);
+	}
 	if (prev === snapshot) {
 		console.log(`cr-guard OK — ${rows.length} rows, digest ${digest.slice(0, 16)}… unchanged`);
 		process.exit(0);
@@ -89,9 +108,12 @@ if (mode === '--check') {
 	process.exit(1);
 }
 
-process.stdout.write(snapshot);
-console.log(`# ${rows.length} rows, sha256 ${digest}`);
 if (mode === '--save') {
+	// Digest line only — the full dump is noise here; rows are printed
+	// where they matter (plain invocation, or a --check failure's diff).
 	writeFileSync(file, snapshot, 'utf8');
-	console.log(`# snapshot saved to ${file}`);
+	console.log(`cr-guard saved — ${rows.length} rows, digest ${digest.slice(0, 16)}… → ${file}`);
+} else {
+	process.stdout.write(snapshot);
+	console.log(`# ${rows.length} rows, sha256 ${digest}`);
 }
