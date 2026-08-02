@@ -173,12 +173,7 @@
 						{showDetails ? 'Hide' : 'Show'} details
 					</button>
 				{/if}
-				<button
-					type="button"
-					class="dismiss"
-					onclick={dismiss}
-					aria-label="Dismiss summary"
-				>
+				<button type="button" class="dismiss" onclick={dismiss} aria-label="Dismiss summary">
 					×
 				</button>
 			</p>

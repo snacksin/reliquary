@@ -8,7 +8,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		formData = await request.formData();
 	} catch (e) {
 		// SvelteKit's body-size-limit error carries { status, text } — surface it as-is.
-		if (e && typeof e === 'object' && 'status' in e && typeof (e as { status: unknown }).status === 'number') {
+		if (
+			e &&
+			typeof e === 'object' &&
+			'status' in e &&
+			typeof (e as { status: unknown }).status === 'number'
+		) {
 			const err = e as { status: number; text?: string };
 			throw error(err.status, err.text ?? 'Request error');
 		}

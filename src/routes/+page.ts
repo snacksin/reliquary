@@ -1,11 +1,5 @@
 import type { PageLoad } from './$types';
-import {
-	listWorks,
-	listAllWorks,
-	getTags,
-	getPersonalTags,
-	type FilterCategory
-} from '$lib/api';
+import { listWorks, listAllWorks, getTags, getPersonalTags, type FilterCategory } from '$lib/api';
 
 /**
  * Parse the `tags` query param (comma-separated tag IDs). Same shape as

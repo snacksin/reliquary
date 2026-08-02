@@ -358,7 +358,10 @@
 				</div>
 				<label class="sort-picker">
 					<span class="sort-label">Sort</span>
-					<select value={data.sort} onchange={(e) => pushSort((e.target as HTMLSelectElement).value)}>
+					<select
+						value={data.sort}
+						onchange={(e) => pushSort((e.target as HTMLSelectElement).value)}
+					>
 						{#each SORT_OPTIONS as opt (opt.value)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}

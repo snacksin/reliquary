@@ -95,7 +95,10 @@
 			</button>
 		</div>
 	{:else if baseline}
-		<p class="skin-status">This fic has a creator's style — it applies in the reader (hide it per-fic from the reader's settings ⚙).</p>
+		<p class="skin-status">
+			This fic has a creator's style — it applies in the reader (hide it per-fic from the reader's
+			settings ⚙).
+		</p>
 		<div class="skin-actions start">
 			<button type="button" class="edit-btn" onclick={startEdit} disabled={busy}>Replace</button>
 			<button type="button" class="edit-btn" onclick={remove} disabled={busy}>

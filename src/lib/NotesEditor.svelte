@@ -119,12 +119,44 @@
 	<h2>Notes</h2>
 	{#if editing}
 		<div class="md-toolbar" role="toolbar" aria-label="Formatting">
-			<button type="button" class="tb-btn bold" onclick={() => surround('**', '**')} title="Bold" aria-label="Bold">B</button>
-			<button type="button" class="tb-btn italic" onclick={() => surround('_', '_')} title="Italic" aria-label="Italic">I</button>
-			<button type="button" class="tb-btn" onclick={() => prefixLines('## ')} title="Heading" aria-label="Heading">H</button>
-			<button type="button" class="tb-btn" onclick={() => prefixLines('- ')} title="Bulleted list" aria-label="Bulleted list">• List</button>
-			<button type="button" class="tb-btn" onclick={() => prefixLines('1. ')} title="Numbered list" aria-label="Numbered list">1. List</button>
-			<button type="button" class="tb-btn" onclick={insertLink} title="Link" aria-label="Link">Link</button>
+			<button
+				type="button"
+				class="tb-btn bold"
+				onclick={() => surround('**', '**')}
+				title="Bold"
+				aria-label="Bold">B</button
+			>
+			<button
+				type="button"
+				class="tb-btn italic"
+				onclick={() => surround('_', '_')}
+				title="Italic"
+				aria-label="Italic">I</button
+			>
+			<button
+				type="button"
+				class="tb-btn"
+				onclick={() => prefixLines('## ')}
+				title="Heading"
+				aria-label="Heading">H</button
+			>
+			<button
+				type="button"
+				class="tb-btn"
+				onclick={() => prefixLines('- ')}
+				title="Bulleted list"
+				aria-label="Bulleted list">• List</button
+			>
+			<button
+				type="button"
+				class="tb-btn"
+				onclick={() => prefixLines('1. ')}
+				title="Numbered list"
+				aria-label="Numbered list">1. List</button
+			>
+			<button type="button" class="tb-btn" onclick={insertLink} title="Link" aria-label="Link"
+				>Link</button
+			>
 		</div>
 		<textarea
 			class="note-editor"

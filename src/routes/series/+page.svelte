@@ -1,10 +1,5 @@
 <script lang="ts">
-	import {
-		favoriteSeries,
-		unfavoriteSeries,
-		setSeriesHidden,
-		type SeriesSummary
-	} from '$lib/api';
+	import { favoriteSeries, unfavoriteSeries, setSeriesHidden, type SeriesSummary } from '$lib/api';
 	import { Heart, Eye, EyeOff } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -118,7 +113,9 @@
 			type="button"
 			class="icon-btn"
 			onclick={(e) => toggleHidden(e, s)}
-			aria-label={s.hidden_from_index ? `Show ${s.name} on the index` : `Hide ${s.name} from the index`}
+			aria-label={s.hidden_from_index
+				? `Show ${s.name} on the index`
+				: `Hide ${s.name} from the index`}
 			aria-pressed={s.hidden_from_index}
 			title={s.hidden_from_index ? 'Hidden from the index — click to show' : 'Hide from the index'}
 		>

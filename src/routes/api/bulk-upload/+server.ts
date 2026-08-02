@@ -102,11 +102,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					}
 				} catch (e) {
 					const reason =
-						e instanceof IngestError
-							? e.message
-							: e instanceof Error
-								? e.message
-								: 'Unknown error';
+						e instanceof IngestError ? e.message : e instanceof Error ? e.message : 'Unknown error';
 					failed.push({ filename, reason });
 					// Don't rethrow — keep processing the rest of the batch.
 					// ingestEpub already logged the real error + cleaned up.

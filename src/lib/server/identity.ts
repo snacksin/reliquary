@@ -58,9 +58,7 @@ export function hashChapterContent(html: string, workId: string): string {
  * "+/- N words" delta Part 2's history view will show.
  */
 export function countWords(html: string): number {
-	const text = html
-		.replace(/<[^>]+>/g, ' ')
-		.replace(/&[a-z#0-9]+;/gi, ' ');
+	const text = html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ');
 	const tokens = text.trim().match(/\S+/g);
 	return tokens ? tokens.length : 0;
 }
@@ -141,10 +139,7 @@ export function backfillIdentity(db: Database): void {
 			update.run(contentHash, sourceUrl, work.id);
 			filled += 1;
 		} catch (e) {
-			console.error(
-				`[backfill] skip ${work.id}:`,
-				e instanceof Error ? e.message : e
-			);
+			console.error(`[backfill] skip ${work.id}:`, e instanceof Error ? e.message : e);
 		}
 	}
 

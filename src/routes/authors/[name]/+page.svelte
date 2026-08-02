@@ -99,7 +99,6 @@
 		<p class="error">{favError}</p>
 	{/if}
 
-
 	<div class="cols">
 		<!-- Left: Part 2 notes + tags (was the "coming soon" stub). The {#key}
 		     remounts the component per author so its prop-seeded local state

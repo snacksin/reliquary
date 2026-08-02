@@ -24,15 +24,13 @@ import { getDb } from '$lib/server/db';
  *   sticky Continue-Reading dismissal so it can return to the carousel.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
-	const body = (await request.json().catch(() => null)) as
-		| { chapter?: unknown; scroll_y?: unknown; completed?: unknown }
-		| null;
+	const body = (await request.json().catch(() => null)) as {
+		chapter?: unknown;
+		scroll_y?: unknown;
+		completed?: unknown;
+	} | null;
 
-	if (
-		!body ||
-		typeof body.chapter !== 'number' ||
-		typeof body.scroll_y !== 'number'
-	) {
+	if (!body || typeof body.chapter !== 'number' || typeof body.scroll_y !== 'number') {
 		throw error(400, 'expected { chapter, scroll_y }');
 	}
 	if (!Number.isInteger(body.chapter) || body.chapter < 1) {

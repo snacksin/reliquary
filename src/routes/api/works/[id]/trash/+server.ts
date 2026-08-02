@@ -28,9 +28,9 @@ export const POST: RequestHandler = ({ params }) => {
 	if (!exists) {
 		throw error(404, 'work not found');
 	}
-	db.prepare('UPDATE works SET trashed_at = CURRENT_TIMESTAMP WHERE id = ? AND trashed_at IS NULL').run(
-		params.id
-	);
+	db.prepare(
+		'UPDATE works SET trashed_at = CURRENT_TIMESTAMP WHERE id = ? AND trashed_at IS NULL'
+	).run(params.id);
 	return new Response(null, { status: 204 });
 };
 

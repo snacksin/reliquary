@@ -29,7 +29,8 @@ export function findOrCreateSeriesByName(db: Database, name: string): number {
 		.get(name) as { id: number } | undefined;
 	if (existing) return existing.id;
 	return Number(
-		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name).lastInsertRowid
+		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name)
+			.lastInsertRowid
 	);
 }
 
@@ -65,7 +66,8 @@ export function findOrCreateSeriesByNameAcrossTrash(db: Database, name: string):
 		.get(name) as { id: number } | undefined;
 	if (existing) return existing.id;
 	return Number(
-		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name).lastInsertRowid
+		db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (NULL, ?)').run(name)
+			.lastInsertRowid
 	);
 }
 
@@ -76,8 +78,9 @@ function resolveSeriesId(db: Database, entry: ParsedSeries): number {
 			| undefined;
 		if (existing) return existing.id;
 		return Number(
-			db.prepare('INSERT INTO series (ao3_series_url, name) VALUES (?, ?)').run(entry.url, entry.name)
-				.lastInsertRowid
+			db
+				.prepare('INSERT INTO series (ao3_series_url, name) VALUES (?, ?)')
+				.run(entry.url, entry.name).lastInsertRowid
 		);
 	}
 	return findOrCreateSeriesByName(db, entry.name);
@@ -121,9 +124,9 @@ export function syncWorkSeries(db: Database, workId: string, entries: ParsedSeri
  * so it never blocks boot.
  */
 export function backfillSeries(db: Database): void {
-	const works = db
-		.prepare(`SELECT id FROM works WHERE series_scanned_at IS NULL`)
-		.all() as { id: string }[];
+	const works = db.prepare(`SELECT id FROM works WHERE series_scanned_at IS NULL`).all() as {
+		id: string;
+	}[];
 
 	if (works.length === 0) {
 		console.log('[series-backfill] 0 works scanned');

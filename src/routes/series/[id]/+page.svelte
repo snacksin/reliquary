@@ -33,7 +33,8 @@
 	const backLabel = $derived(backHref.startsWith('/works/') ? '← Back to fic' : '← Series');
 	afterNavigate((nav) => {
 		const from = nav.from?.url;
-		backHref = from && from.pathname.startsWith('/works/') ? from.pathname + from.search : '/series';
+		backHref =
+			from && from.pathname.startsWith('/works/') ? from.pathname + from.search : '/series';
 	});
 
 	// Optimistic favorite (mirrors the author index/detail heart): pendingFav
