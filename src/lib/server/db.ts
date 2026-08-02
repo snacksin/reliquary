@@ -55,6 +55,19 @@ export function getDb(): Database.Database {
 
 	cached = db;
 
+	// ── CR-invisibility contract (all backfills below) ────────────────
+	// Boot-time backfills are normalization/identity passes over stored
+	// data. They must be INVISIBLE to Continue Reading: never write
+	// reading_progress, works.chapters_updated_at, or anything else the
+	// carousel's inclusion or ordering derives from (crSortKey in
+	// src/lib/reading.ts). A backfill that bumps a recency signal would
+	// silently promote stale rows — a fic the user never meant to read
+	// jumping to the top of CR. The standing harness for any new or
+	// changed backfill is scripts/cr-guard.mjs: snapshot before the boot,
+	// --check after; the projection must be byte-identical.
+	// (purgeExpired is outside the contract: it removes whole >30-day
+	// trashed works, which are already excluded from CR.)
+
 	// M2.3 Step 2: one-shot identity backfill. Cache the handle FIRST so
 	// the re-entrant getDb() inside the backfill returns immediately, and
 	// guard it so a backfill failure can never stop the DB from booting.
