@@ -511,8 +511,14 @@
 				by
 				{#if data.work.authors?.length}
 					{#each data.work.authors as a, i (a.account + '\0' + (a.pseud ?? ''))}
-						{#if i > 0}{', '}{/if}<a href="/authors/{encodeURIComponent(a.account)}"
-							>{authorName(a)}</a
+						<!-- The ", " separator rides a ternary, not an {#if} block:
+						     Svelte trims block-edge whitespace next to a newline, so a
+						     trailing ", " inside {#if} loses its space as soon as
+						     prettier rewraps the line. The expression form keeps the
+						     string opaque to both tools (and satisfies
+						     no-useless-mustaches — it's an expression, not a bare
+						     string literal). -->
+						{i > 0 ? ', ' : ''}<a href="/authors/{encodeURIComponent(a.account)}">{authorName(a)}</a
 						>
 					{/each}
 				{:else}

@@ -11,7 +11,8 @@
 	<nav class="series-section" aria-label="Series">
 		{#each data.series as s (s.id)}
 			<p class="series-line">
-				{#if s.position != null}Part {s.position} of{/if}{' '}<a href="/series/{s.id}">{s.name}</a>
+				{#if s.position != null}Part {s.position} of{/if}
+				<a href="/series/{s.id}">{s.name}</a>
 			</p>
 		{/each}
 	</nav>
