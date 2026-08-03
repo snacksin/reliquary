@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { error, json } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
 import { purgeWork } from '$lib/server/purge';
+import { sanitizeFicHtml } from '$lib/server/sanitize';
 
 export const GET: RequestHandler = ({ params }) => {
 	const db = getDb();
@@ -84,7 +85,11 @@ export const GET: RequestHandler = ({ params }) => {
 		id: row.id,
 		title: row.title,
 		author: row.author,
-		summary: row.summary,
+		// Serve-boundary sanitize (Code Health Step 2): the summary is stored
+		// raw (deliberately un-decoded — see ingest.ts) and rendered with
+		// {@html} on the detail page, so it gets the same DOMPurify pass as
+		// chapter HTML. The stored value is untouched.
+		summary: row.summary === null ? null : sanitizeFicHtml(row.summary),
 		chapter_count: row.chapter_count,
 		word_count: row.word_count,
 		is_favorite: row.favorited_at !== null,

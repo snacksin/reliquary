@@ -19,6 +19,7 @@
 		"better-sqlite3": "^12.9.0",
 		"dompurify": "^3.4.12",
 		"epub2": "^3.0.2",
+		"jsdom": "^29.1.1",
 		"lucide-svelte": "^1.0.1",
 		"marked": "^18.0.5"
 	},
@@ -30,6 +31,7 @@
 		"@sveltejs/kit": "^2.69.1",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@types/better-sqlite3": "^7.6.13",
+		"@types/jsdom": "^28.0.3",
 		"@types/node": "^24",
 		"eslint": "^10.7.0",
 		"eslint-config-prettier": "^10.1.8",
