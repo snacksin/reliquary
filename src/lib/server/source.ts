@@ -87,5 +87,7 @@ export function backfillSourceUrl(db: Database): void {
 		}
 	}
 
-	console.log(`[source-url-backfill] ${recovered} recovered` + (none > 0 ? `, ${none} no URL` : ''));
+	console.log(
+		`[source-url-backfill] ${recovered} recovered` + (none > 0 ? `, ${none} no URL` : '')
+	);
 }

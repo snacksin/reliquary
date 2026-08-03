@@ -22,7 +22,9 @@ export const GET: RequestHandler = ({ params }) => {
 			  ORDER BY (sw.position IS NULL), sw.position ASC, s.name COLLATE NOCASE ASC`
 		)
 		.all(params.id) as Row[];
-	return json(rows.map((r) => ({ id: r.id, name: r.name, position: r.position, manual: r.manual === 1 })));
+	return json(
+		rows.map((r) => ({ id: r.id, name: r.name, position: r.position, manual: r.manual === 1 }))
+	);
 };
 
 function workExists(db: ReturnType<typeof getDb>, id: string): boolean {

@@ -134,7 +134,9 @@
 
 	{#if authors.length === 0}
 		{#if selectedTagIds.size > 0}
-			<p class="empty-state">No authors match the selected tag{selectedTagIds.size === 1 ? '' : 's'}.</p>
+			<p class="empty-state">
+				No authors match the selected tag{selectedTagIds.size === 1 ? '' : 's'}.
+			</p>
 		{:else}
 			<p class="empty-state">No authors yet — your library is empty.</p>
 		{/if}

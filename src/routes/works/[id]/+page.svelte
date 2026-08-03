@@ -53,9 +53,7 @@
 	let coverBusy = $state(false);
 	let coverError = $state<string | null>(null);
 	let coverInputEl = $state<HTMLInputElement | null>(null);
-	const coverV = $derived(
-		pendingCover !== undefined ? pendingCover : (data.work.cover_v ?? null)
-	);
+	const coverV = $derived(pendingCover !== undefined ? pendingCover : (data.work.cover_v ?? null));
 
 	async function handleCoverPicked(e: Event) {
 		const input = e.target as HTMLInputElement;
@@ -424,7 +422,12 @@
 						{coverBusy ? 'Saving…' : coverV !== null ? 'Replace cover' : 'Set cover'}
 					</button>
 					{#if coverV !== null}
-						<button type="button" class="cover-btn" disabled={coverBusy} onclick={handleCoverRemove}>
+						<button
+							type="button"
+							class="cover-btn"
+							disabled={coverBusy}
+							onclick={handleCoverRemove}
+						>
 							Remove
 						</button>
 					{/if}
@@ -472,7 +475,11 @@
 			<div class="title-row">
 				<h1>{data.work.title}</h1>
 				{#if data.work.has_history}
-					<a class="history-button" href="/works/{data.work.id}/history" title="View chapter edit history">
+					<a
+						class="history-button"
+						href="/works/{data.work.id}/history"
+						title="View chapter edit history"
+					>
 						<span aria-hidden="true">📜</span> History
 					</a>
 				{/if}
@@ -631,7 +638,10 @@
 					{#if ch.title}{ch.title}{:else}<em>untitled</em>{/if}
 				</a>
 				{#if ch.last_edited_at}
-					<span class="edited-pill" title="This chapter has been updated since it was first saved — earlier versions are kept">
+					<span
+						class="edited-pill"
+						title="This chapter has been updated since it was first saved — earlier versions are kept"
+					>
 						Updated · {shortDate(ch.last_edited_at)}
 					</span>
 				{/if}
@@ -646,9 +656,7 @@
 
 	{#if !isTrashed}
 		<div class="danger-zone">
-			<button type="button" class="trash-button" onclick={openTrashDialog}>
-				Move to Trash
-			</button>
+			<button type="button" class="trash-button" onclick={openTrashDialog}> Move to Trash </button>
 		</div>
 	{/if}
 </main>
@@ -661,8 +669,8 @@
 >
 	<h2>Move to Trash?</h2>
 	<p>
-		“{data.work.title}” will be hidden from your library, search, and filters. Nothing is
-		deleted — you can restore it.
+		“{data.work.title}” will be hidden from your library, search, and filters. Nothing is deleted —
+		you can restore it.
 	</p>
 	{#if trashError}
 		<p class="dialog-error" role="alert">{trashError}</p>

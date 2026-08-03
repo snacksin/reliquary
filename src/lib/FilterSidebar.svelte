@@ -162,9 +162,7 @@
 	 * jump back to top mid-filter-session.
 	 */
 	function toggleTag(id: number) {
-		const next = isSelected(id)
-			? selectedIds.filter((x) => x !== id)
-			: [...selectedIds, id];
+		const next = isSelected(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
 		pushFilterState(next, matchAllCategories);
 	}
 
@@ -291,11 +289,7 @@
 						class="match-all-row"
 						title="When checked, a fic must have ALL selected {label.toLowerCase()} tags — useful for crossovers. When unchecked (default), any one matches."
 					>
-						<input
-							type="checkbox"
-							checked={isMatchAll(key)}
-							onchange={() => toggleMatchAll(key)}
-						/>
+						<input type="checkbox" checked={isMatchAll(key)} onchange={() => toggleMatchAll(key)} />
 						<span class="match-all-label">Must match all selected</span>
 					</label>
 					<ul class="tag-list">

@@ -243,7 +243,9 @@
 						<button type="button" class="row-action" onclick={() => saveEdit(link)}>Save</button>
 						<button type="button" class="row-action" onclick={cancelEdit}>Cancel</button>
 					{:else}
-						<span class="link-text">{posText(link.position)}<a href="/series/{link.id}">{link.name}</a></span>
+						<span class="link-text"
+							>{posText(link.position)}<a href="/series/{link.id}">{link.name}</a></span
+						>
 						{#if link.manual}
 							<button type="button" class="row-action" onclick={() => startEdit(link)}>edit</button>
 							<button

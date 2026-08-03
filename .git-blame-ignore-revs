@@ -1,0 +1,13 @@
+# Commits that `git blame` should skip — bulk mechanical changes with no
+# authorship signal. Git reads this file when told to:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs   (once, per clone)
+#
+# after which `git blame` attributes lines to the commit that last made a
+# REAL change, not to the sweep. GitHub's blame view picks this file up
+# automatically by its well-known name.
+#
+# Full 40-char hashes only, one per line.
+
+# Code Health Step 1: prettier format sweep (Chore: prettier format sweep)
+96001f63e3b0e48bbe66334760794e9b170116fa

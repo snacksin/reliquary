@@ -122,8 +122,8 @@
 			{/if}
 		</div>
 		<p class="explainer">
-			Trashed fics are hidden from your library but not deleted. They're permanently removed 30
-			days after you trash them — restore anything you want to keep before then.
+			Trashed fics are hidden from your library but not deleted. They're permanently removed 30 days
+			after you trash them — restore anything you want to keep before then.
 		</p>
 	</header>
 
@@ -168,7 +168,12 @@
 	{/if}
 </main>
 
-<dialog bind:this={deleteDialog} class="confirm-dialog" onkeydown={deleteKeydown} onclose={() => (deleteTarget = null)}>
+<dialog
+	bind:this={deleteDialog}
+	class="confirm-dialog"
+	onkeydown={deleteKeydown}
+	onclose={() => (deleteTarget = null)}
+>
 	{#if deleteTarget}
 		<h2>Delete forever?</h2>
 		<p>
@@ -189,8 +194,8 @@
 <dialog bind:this={emptyDialog} class="confirm-dialog" onkeydown={emptyKeydown}>
 	<h2>Empty Trash?</h2>
 	<p>
-		All {trashed.length} fic{trashed.length === 1 ? '' : 's'} in Trash will be permanently deleted,
-		including their saved edit history. This can't be undone.
+		All {trashed.length} fic{trashed.length === 1 ? '' : 's'} in Trash will be permanently deleted, including
+		their saved edit history. This can't be undone.
 	</p>
 	<div class="dialog-actions">
 		<button type="button" class="secondary" bind:this={emptyCancelEl} onclick={closeEmpty}>

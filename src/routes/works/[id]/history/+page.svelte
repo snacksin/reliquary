@@ -32,8 +32,8 @@
 		<p class="back"><a href="/works/{data.work.id}">← {data.work.title}</a></p>
 		<h1>Chapter history</h1>
 		<p class="explainer">
-			Earlier versions of chapters that were edited after they were saved. Each version is
-			kept exactly as it was — newest edits first.
+			Earlier versions of chapters that were edited after they were saved. Each version is kept
+			exactly as it was — newest edits first.
 		</p>
 	</header>
 
@@ -43,7 +43,8 @@
 		{#each groups as group (group.number)}
 			<section class="chapter-group">
 				<h2>
-					Chapter {group.number}{#if group.title} · {group.title}{/if}
+					Chapter {group.number}{#if group.title}
+						· {group.title}{/if}
 				</h2>
 				<ul class="versions">
 					{#each group.archives as a (a.archive_id)}

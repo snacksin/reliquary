@@ -110,14 +110,7 @@
 			oninput={handleInput}
 		/>
 		{#if value.length > 0}
-			<button
-				type="button"
-				class="clear"
-				aria-label="Clear search"
-				onclick={clear}
-			>
-				×
-			</button>
+			<button type="button" class="clear" aria-label="Clear search" onclick={clear}> × </button>
 		{/if}
 	</label>
 </form>

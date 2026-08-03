@@ -478,18 +478,16 @@ export const GET: RequestHandler = ({ url }) => {
 	// slice. Two prepared statements share `baseParams`. Clamp the
 	// requested page to the actual page range so a stale URL after a
 	// delete doesn't 404 — instead it returns the last page.
-	const totalRow = db
-		.prepare(`SELECT COUNT(*) AS n ${baseSql}`)
-		.get(...baseParams) as { n: number };
+	const totalRow = db.prepare(`SELECT COUNT(*) AS n ${baseSql}`).get(...baseParams) as {
+		n: number;
+	};
 	const total = totalRow.n;
 	const totalPages = Math.max(1, Math.ceil(total / perPage));
 	const clampedPage = Math.min(page, totalPages);
 	const offset = (clampedPage - 1) * perPage;
 
 	const rows = db
-		.prepare(
-			`SELECT ${SELECT_COLUMNS} ${baseSql} ${buildOrderBy(sort)} LIMIT ? OFFSET ?`
-		)
+		.prepare(`SELECT ${SELECT_COLUMNS} ${baseSql} ${buildOrderBy(sort)} LIMIT ? OFFSET ?`)
 		.all(...baseParams, perPage, offset) as Row[];
 
 	return json({

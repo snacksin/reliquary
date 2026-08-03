@@ -523,9 +523,9 @@
 			reverse-engineer the UI to understand the model.
 		-->
 		<p class="explainer">
-			Tag aliases let you group related tags into parent/child relationships. When you
-			filter your library by a parent tag, you'll also see works tagged with any of its
-			children. Setup is manual — you decide which tags belong together.
+			Tag aliases let you group related tags into parent/child relationships. When you filter your
+			library by a parent tag, you'll also see works tagged with any of its children. Setup is
+			manual — you decide which tags belong together.
 		</p>
 
 		<div class="controls">
@@ -558,7 +558,11 @@
 		{@const isChildRow = edge !== null}
 		{@const selfHidden = !isChildRow && isSelfHidden(tag)}
 
-		<li class="tree-row" class:has-children={hasChildren} class:hidden-edge={isHidden || selfHidden}>
+		<li
+			class="tree-row"
+			class:has-children={hasChildren}
+			class:hidden-edge={isHidden || selfHidden}
+		>
 			<div class="row-content" style="padding-left: {depth * 1.4}rem">
 				{#if hasChildren}
 					<button
@@ -697,16 +701,9 @@
 						onkeydown={cbOnKeyDown}
 					/>
 					{#if cbOpen}
-						<ul
-							id="combobox-list"
-							bind:this={cbListEl}
-							class="combobox-list"
-							role="listbox"
-						>
+						<ul id="combobox-list" bind:this={cbListEl} class="combobox-list" role="listbox">
 							{#if cbFiltered.length === 0}
-								<li class="combobox-empty" role="presentation">
-									No matching tags
-								</li>
+								<li class="combobox-empty" role="presentation">No matching tags</li>
 							{:else}
 								{#each cbFiltered as opt, i (opt.id)}
 									<li
@@ -734,8 +731,8 @@
 			</div>
 
 			<p class="dialog-note">
-				When you filter by <strong>{dialogParent.name}</strong>, you'll also see works
-				tagged with the grouped tag.
+				When you filter by <strong>{dialogParent.name}</strong>, you'll also see works tagged with
+				the grouped tag.
 			</p>
 
 			<label class="hide-label">
@@ -752,9 +749,7 @@
 
 			<div class="dialog-actions">
 				<button type="button" class="secondary" onclick={closeDialog}>Cancel</button>
-				<button type="submit" class="primary" disabled={dialogChildId === ''}>
-					Group it
-				</button>
+				<button type="submit" class="primary" disabled={dialogChildId === ''}> Group it </button>
 			</div>
 		</form>
 	{/if}
@@ -770,9 +765,8 @@
 		{@const childCount = childEdgesByParent.get(hideConfirmTag.id)?.length ?? 0}
 		<h2>Hide "{hideConfirmTag.name}"?</h2>
 		<p>
-			This tag has {childCount} child tag{childCount === 1 ? '' : 's'} grouped under it.
-			Hiding it removes "{hideConfirmTag.name}" from the sidebar. Children stay visible
-			per their own settings.
+			This tag has {childCount} child tag{childCount === 1 ? '' : 's'} grouped under it. Hiding it removes
+			"{hideConfirmTag.name}" from the sidebar. Children stay visible per their own settings.
 		</p>
 		<div class="dialog-actions">
 			<button
