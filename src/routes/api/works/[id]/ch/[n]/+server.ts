@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { error } from '@sveltejs/kit';
 import { readFileSync } from 'node:fs';
 import { getDb } from '$lib/server/db';
+import { sanitizeFicHtml } from '$lib/server/sanitize';
 
 export const GET: RequestHandler = ({ params }) => {
 	const number = Number(params.n);
@@ -25,7 +26,11 @@ export const GET: RequestHandler = ({ params }) => {
 		throw error(404, 'chapter file missing');
 	}
 
-	return new Response(body, {
+	// Serve-boundary sanitize (Code Health Step 2) — the stored file stays
+	// raw (dedup identity + edit detection hash the raw bytes); only what's
+	// served is cleaned. Deliberately outside the catch above: a sanitize
+	// failure must 500, never fall back to raw.
+	return new Response(sanitizeFicHtml(body), {
 		headers: { 'content-type': 'text/html; charset=utf-8' }
 	});
 };

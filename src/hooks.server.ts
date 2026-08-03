@@ -23,6 +23,13 @@
  * error already failed cleanly from the client's perspective.
  */
 
+// Code Health Step 2: warm the fic-HTML sanitizer at boot. The import's
+// module init builds the jsdom window and ASSERTS DOMPurify support —
+// a broken jsdom install crashes the server at startup (visible,
+// diagnosable) instead of 500ing on the first chapter read. Fail closed,
+// early.
+import '$lib/server/sanitize';
+
 if (typeof process !== 'undefined' && process.on) {
 	process.on('unhandledRejection', (reason) => {
 		console.error(

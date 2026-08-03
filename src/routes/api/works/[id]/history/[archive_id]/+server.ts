@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { getDb } from '$lib/server/db';
+import { sanitizeFicHtml } from '$lib/server/sanitize';
 
 /**
  * `GET /api/works/[id]/history/[archive_id]` — serve one archived chapter
@@ -51,7 +52,11 @@ export const GET: RequestHandler = ({ params }) => {
 		throw error(404, 'archived version not found');
 	}
 
-	return new Response(body, {
+	// Serve-boundary sanitize (Code Health Step 2) — the ARCHIVED file stays
+	// raw on disk (archives are immutable records); only what's served is
+	// cleaned. Deliberately outside the catch above: a sanitize failure must
+	// 500, never fall back to raw.
+	return new Response(sanitizeFicHtml(body), {
 		headers: { 'content-type': 'text/html; charset=utf-8' }
 	});
 };
