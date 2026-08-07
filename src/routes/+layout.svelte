@@ -17,6 +17,11 @@
 			(page.route.id ?? '').startsWith('/series')
 	);
 
+	// M2.2 Step 1: the first-run /setup page is pre-everything — no
+	// settings hamburger there (same spirit as showTopNav: system pages
+	// don't get browse chrome). Every other page keeps it.
+	const showSettings = $derived(page.route.id !== '/setup');
+
 	// Mirror the themeStore reactively onto <html data-theme="..." />.
 	// The inline boot script in app.html sets the attribute synchronously
 	// before paint on cold loads (anti-flash); this $effect keeps it in
@@ -38,11 +43,14 @@
 <!--
 	The settings panel renders globally so the user can switch theme
 	(and, after Step 8, font/size/line-height/column-width) from any
-	page — library, detail, preface, afterword, chapter. The
-	hamburger button is fixed-position top-right; click-outside-
+	page — library, detail, preface, afterword, chapter. The one
+	exception is the first-run /setup page (see showSettings above).
+	The hamburger button is fixed-position top-right; click-outside-
 	to-close logic lives inside SettingsPanel.svelte.
 -->
-<SettingsPanel />
+{#if showSettings}
+	<SettingsPanel />
+{/if}
 
 {#if showTopNav}
 	<TopNav />

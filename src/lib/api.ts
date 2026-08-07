@@ -1053,6 +1053,45 @@ export async function removeTagAlias(
 	if (!res.ok && res.status !== 204) throw new Error(await extractError(res));
 }
 
+/**
+ * LAN password auth (M2.2 Step 1). `passwordSet` doubles as the gate's
+ * on/off state once Step 2 enforces — credentials are the switch.
+ */
+export type AuthStatus = { passwordSet: boolean };
+
+export async function getAuthStatus(fetch: Fetch): Promise<AuthStatus> {
+	const res = await fetch('/api/auth/status');
+	if (!res.ok) throw new Error(await extractError(res));
+	return (await res.json()) as AuthStatus;
+}
+
+/**
+ * First-run set-password. Server refuses to overwrite an existing
+ * password (409 "password already set") — change/remove arrive in
+ * Step 2's settings-panel flow.
+ */
+export async function setupPassword(password: string, fetch: Fetch): Promise<void> {
+	const res = await fetch('/api/auth/setup', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ password })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Verify the LAN password. Step 1: success is a bare 204 (no session);
+ * 401 = wrong password, 409 = no password set (app is open anyway).
+ */
+export async function login(password: string, fetch: Fetch): Promise<void> {
+	const res = await fetch('/api/auth/login', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ password })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {
