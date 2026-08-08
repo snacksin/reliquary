@@ -35,9 +35,27 @@ import '$lib/server/sanitize';
 // native binding (wrong arch, missing prebuild, failed compile) crashes
 // the server at startup instead of 500ing the first login. Fail closed,
 // early. (Same contract as sanitize above, generalized to async init.)
+import { randomUUID } from 'node:crypto';
 import { isPasswordSet } from '$lib/server/auth';
 import { validateSession } from '$lib/server/session';
-import { json, redirect, type Handle } from '@sveltejs/kit';
+import { json, redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+
+/**
+ * M2.2 Step 4 (error hygiene): the choke point for UNEXPECTED errors.
+ * Kit already sanitizes these to 'Internal Error' outward; this hook
+ * pins that guarantee in our own code and makes the inward half
+ * useful — the full error goes to the server log under a short id,
+ * and the id (alone) rides the response so a screenshot of the error
+ * page points straight at the log line. Framework 404s (unmatched
+ * routes while the app is open) skip the ceremony: no stack worth
+ * logging, no id worth minting.
+ */
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	if (status === 404) return { message };
+	const id = randomUUID().slice(0, 8);
+	console.error(`[error ${id}] ${event.request.method} ${event.url.pathname} → ${status}`, error);
+	return { message, id };
+};
 
 /**
  * M2.2 Step 2 — THE GATE. Enforced ONLY when a password is set (the

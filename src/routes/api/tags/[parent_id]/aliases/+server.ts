@@ -143,9 +143,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		)
 		.get(aliasId, parentId);
 	if (cycle) {
+		// Names stay (the /tags page needs an actionable message); the raw
+		// row ids don't — they're internal detail (error hygiene).
 		throw error(
 			400,
-			`Cycle would be created. Tag ${alias.name} (id ${aliasId}) is already a descendant of tag ${parent.name} (id ${parentId}).`
+			`Cycle would be created: “${alias.name}” is already a descendant of “${parent.name}”.`
 		);
 	}
 

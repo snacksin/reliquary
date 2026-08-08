@@ -1155,5 +1155,7 @@ async function extractError(res: Response): Promise<string> {
 	} catch {
 		// not JSON — fall through
 	}
-	return body || `request failed: ${res.status}`;
+	// Error hygiene: the non-JSON fallback is an unbounded sink (a whole
+	// HTML body could become an inline error message) — cap it.
+	return body.slice(0, 200) || `request failed: ${res.status}`;
 }

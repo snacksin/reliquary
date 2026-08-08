@@ -22,8 +22,12 @@ export const GET: RequestHandler = ({ params }) => {
 	let body: string;
 	try {
 		body = readFileSync(row.content_path, 'utf8');
-	} catch {
-		throw error(404, 'chapter file missing');
+	} catch (e) {
+		// Error hygiene: outwardly identical to the no-row 404 — the
+		// row-exists-but-file-is-gone distinction is an internal state
+		// oracle; it belongs in the log (same rule as wrapper.ts).
+		console.error(`[chapter] row exists but file unreadable for work ${params.id} ch ${number}`, e);
+		throw error(404, 'chapter not found');
 	}
 
 	// Serve-boundary sanitize (Code Health Step 2) — the stored file stays

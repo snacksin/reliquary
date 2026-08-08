@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { error } from '@sveltejs/kit';
-import { ingestEpub, IngestError } from '$lib/server/ingest';
+import { ingestEpub, IngestError, publicIngestMessage } from '$lib/server/ingest';
 
 /**
  * Bulk EPUB import. Accepts multipart/form-data with N `file` parts and
@@ -41,8 +41,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			'status' in e &&
 			typeof (e as { status: unknown }).status === 'number'
 		) {
-			const err = e as { status: number; text?: string };
-			throw error(err.status, err.text ?? 'Request error');
+			// Keep Kit's status, replace its text — the original spells out
+			// the configured byte limit (error hygiene: config stays inward).
+			const status = (e as { status: number }).status;
+			throw error(status, status === 413 ? 'upload too large (max 50 MB)' : 'request error');
 		}
 		throw error(400, 'expected multipart/form-data body');
 	}
@@ -101,11 +103,20 @@ export const POST: RequestHandler = async ({ request }) => {
 						skipped.push({ filename, reason: 'Library copy is newer' });
 					}
 				} catch (e) {
-					const reason =
-						e instanceof IngestError ? e.message : e instanceof Error ? e.message : 'Unknown error';
-					failed.push({ filename, reason });
+					// Error hygiene: this NDJSON stream is a 200 response, so
+					// Kit's generic-500 sanitizer never sees it — the reason
+					// text MUST be a bounded literal set. publicIngestMessage
+					// covers ingest failures; anything else (broken DB, a
+					// TypeError) is logged inward and reported generically —
+					// never e.message, which can carry SQL text or paths.
+					if (e instanceof IngestError) {
+						failed.push({ filename, reason: publicIngestMessage(e) });
+					} else {
+						console.error(`[bulk-upload] unexpected failure on ${filename}`, e);
+						failed.push({ filename, reason: 'Unexpected error — see server log' });
+					}
 					// Don't rethrow — keep processing the rest of the batch.
-					// ingestEpub already logged the real error + cleaned up.
+					// ingestEpub already logged ingest errors + cleaned up.
 				}
 			}
 

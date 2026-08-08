@@ -86,7 +86,12 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	try {
 		formData = await request.formData();
 	} catch (e) {
-		if (e && typeof e === 'object' && 'status' in e) throw e;
+		// Keep Kit's status (413 = over the global body limit) but replace
+		// its text — it spells out the configured byte limit (error
+		// hygiene: config stays inward).
+		if (e && typeof e === 'object' && 'status' in e && typeof e.status === 'number') {
+			throw error(e.status, e.status === 413 ? 'upload too large (max 50 MB)' : 'request error');
+		}
 		throw error(400, 'expected multipart form data');
 	}
 	const file = formData.get('file');

@@ -12,6 +12,11 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		]);
 		return { html, workId: params.id, series };
 	} catch (e) {
-		throw error(404, e instanceof Error ? e.message : 'preface not found');
+		// Error hygiene: re-throw SvelteKit errors/redirects untouched
+		// (preserves real statuses), but never promote a caught message
+		// into the rendered error page — an API-side detail would become
+		// page copy. Fixed literal only.
+		if (e && typeof e === 'object' && 'status' in e) throw e;
+		throw error(404, 'preface not found');
 	}
 };

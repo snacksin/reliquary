@@ -25,7 +25,11 @@ export function readWrapper(workId: string, kind: ChapterKind): string {
 
 	try {
 		return readFileSync(row.content_path, 'utf8');
-	} catch {
-		throw error(404, `${kind} file missing`);
+	} catch (e) {
+		// Error hygiene: outwardly identical to the no-row case — the
+		// DB-row-exists-but-file-is-gone distinction is a small internal
+		// state oracle; it belongs in the log, not the response.
+		console.error(`[wrapper] ${kind} row exists but file unreadable for work ${workId}`, e);
+		throw error(404, `${kind} not found`);
 	}
 }

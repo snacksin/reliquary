@@ -15,6 +15,9 @@
 <main class="error-page">
 	<h1>{page.status}</h1>
 	<p class="message">{page.error?.message ?? 'Something went wrong.'}</p>
+	{#if page.error?.id}
+		<p class="log-id">log id {page.error.id}</p>
+	{/if}
 	<p class="back"><a href="/">← Library</a></p>
 </main>
 
@@ -35,6 +38,11 @@
 		margin: 0 0 1.5rem;
 		font-size: 1rem;
 		line-height: 1.5;
+	}
+	.log-id {
+		margin: -1rem 0 1.5rem;
+		font-size: 0.8rem;
+		color: var(--reader-muted);
 	}
 	.back a {
 		color: var(--reader-link);
