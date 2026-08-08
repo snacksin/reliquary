@@ -30,6 +30,13 @@
 // early.
 import '$lib/server/sanitize';
 
+// M2.2 Step 1: warm the argon2 auth module at boot. Module init runs a
+// minimal-cost hash/verify roundtrip via top-level await — a broken
+// native binding (wrong arch, missing prebuild, failed compile) crashes
+// the server at startup instead of 500ing the first login. Fail closed,
+// early. (Same contract as sanitize above, generalized to async init.)
+import '$lib/server/auth';
+
 if (typeof process !== 'undefined' && process.on) {
 	process.on('unhandledRejection', (reason) => {
 		console.error(
