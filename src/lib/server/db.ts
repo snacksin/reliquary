@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
+import { purgeExpiredSessions } from './session';
 import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
 import { backfillDecodeText, backfillFixHeadings } from './textdecode';
@@ -142,6 +143,16 @@ export function getDb(): Database.Database {
 		purgeExpired(db);
 	} catch (e) {
 		console.error('[purge] failed', e);
+	}
+
+	// M2.2 Step 2: sweep expired login sessions. Housekeeping only (the
+	// session lookup's expires_at predicate is the real boundary), and
+	// outside the CR contract for the same reason as purgeExpired —
+	// sessions touch nothing the CR projection derives from.
+	try {
+		purgeExpiredSessions(db);
+	} catch (e) {
+		console.error('[session-purge] failed', e);
 	}
 
 	return db;

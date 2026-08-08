@@ -1,0 +1,16 @@
+Self-hosted webfonts for the /login page (no Google Fonts at runtime —
+Reliquary's offline principle).
+
+- cormorant-garamond-latin-400.woff2
+  Cormorant Garamond, weight 400, latin subset.
+  Copyright 2015 The Cormorant Project Authors
+  (https://github.com/CatharsisFonts/Cormorant)
+
+- jost-latin-400-500.woff2
+  Jost*, variable weight (used at 400-500), latin subset.
+  Copyright 2020 The Jost Project Authors
+  (https://github.com/indestructible-type/Jost)
+
+Both are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org
+Files as served by Google Fonts (fonts.gstatic.com), fetched 2026-08-08.

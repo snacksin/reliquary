@@ -1,12 +1,14 @@
 /**
- * LAN password credentials — M2.2 Step 1 (hashing + storage only).
+ * LAN password credentials — hashing + storage (M2.2 Steps 1–2).
  *
- * No sessions and no enforcement live here yet: Step 2 adds the session
- * middleware and the hooks guard. The credentials themselves are the
- * gate's on/off switch (Allie 2026-08-07) — a stored hash means the gate
- * enforces (Step 2), no stored hash means the app stays open. Deleting
- * the row (scripts/reset-password.mjs, or the Step 2 settings-panel
- * "remove" flow) IS the disable path; there is no separate flag.
+ * Sessions live in ./session.ts; the gate lives in hooks.server.ts.
+ * The credentials themselves are the gate's on/off switch (Allie
+ * 2026-08-07) — a stored hash means the gate enforces, no stored hash
+ * means the app stays open. Deleting the row (/api/auth/remove, or
+ * scripts/reset-password.mjs) IS the disable path; there is no
+ * separate flag. isPasswordSet() is re-read per request BY CONTRACT:
+ * the reset script mutates the DB from another process, so nothing may
+ * cache the answer.
  *
  * Passwords are stored and compared VERBATIM — no trimming, no Unicode
  * normalization. Do not "helpfully" add NFC/trim later: it would lock
@@ -81,15 +83,36 @@ export function isPasswordSet(): boolean {
 /**
  * Store the hash ONLY if no password exists yet. Returns false when a
  * hash was already stored (including a lost race — the ON CONFLICT is
- * the atomic guard, no check-then-insert TOCTOU). This module has no
- * update path by design: Step 1 scoping — password change arrives in
- * Step 2's settings-panel flow (current-password-required); until then
- * change = CLI reset + re-setup.
+ * the atomic guard, no check-then-insert TOCTOU). Password CHANGE goes
+ * through updateHash below (current-password-verified at the
+ * /api/auth/change endpoint), never through this function.
  */
 export function storeHashIfUnset(hash: string): boolean {
 	const result = getDb()
 		.prepare('INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING')
 		.run(KEY, hash);
+	return result.changes === 1;
+}
+
+/**
+ * Replace the stored hash (password change). Callers MUST have
+ * verified the current password first (/api/auth/change does) and must
+ * rotate sessions afterwards. Returns false when no password was set.
+ */
+export function updateHash(hash: string): boolean {
+	const result = getDb()
+		.prepare('UPDATE app_config SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+		.run(hash, KEY);
+	return result.changes === 1;
+}
+
+/**
+ * Delete the stored hash — the gate's off switch (password remove).
+ * Callers MUST have verified the current password first and must
+ * destroy all sessions afterwards. Returns false when none was set.
+ */
+export function deleteHash(): boolean {
+	const result = getDb().prepare('DELETE FROM app_config WHERE key = ?').run(KEY);
 	return result.changes === 1;
 }
 

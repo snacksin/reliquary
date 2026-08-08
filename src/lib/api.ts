@@ -1,3 +1,6 @@
+import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
+
 export type LastRead = {
 	chapter: number;
 	scroll_y: number;
@@ -1054,10 +1057,11 @@ export async function removeTagAlias(
 }
 
 /**
- * LAN password auth (M2.2 Step 1). `passwordSet` doubles as the gate's
- * on/off state once Step 2 enforces — credentials are the switch.
+ * LAN password auth (M2.2). `passwordSet` IS the gate's on/off state —
+ * credentials are the switch; `authed` is whether this request carried
+ * a valid session (always false while the app is open).
  */
-export type AuthStatus = { passwordSet: boolean };
+export type AuthStatus = { passwordSet: boolean; authed: boolean };
 
 export async function getAuthStatus(fetch: Fetch): Promise<AuthStatus> {
 	const res = await fetch('/api/auth/status');
@@ -1080,8 +1084,9 @@ export async function setupPassword(password: string, fetch: Fetch): Promise<voi
 }
 
 /**
- * Verify the LAN password. Step 1: success is a bare 204 (no session);
- * 401 = wrong password, 409 = no password set (app is open anyway).
+ * Log in: verify the LAN password; success (204) sets the per-device
+ * session cookie. 401 = wrong password, 409 = no password set (the
+ * app is open anyway).
  */
 export async function login(password: string, fetch: Fetch): Promise<void> {
 	const res = await fetch('/api/auth/login', {
@@ -1092,11 +1097,61 @@ export async function login(password: string, fetch: Fetch): Promise<void> {
 	if (!res.ok) throw new Error(await extractError(res));
 }
 
+/**
+ * Change the LAN password (current password required). Success rotates
+ * sessions: this device stays in, every other device is signed out.
+ * 401 = wrong current password, 409 = no password set.
+ */
+export async function changePassword(
+	currentPassword: string,
+	newPassword: string,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch('/api/auth/change', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ currentPassword, newPassword })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/**
+ * Remove the LAN password (current password required) — the gate's off
+ * switch. All sessions are destroyed; the app is open afterwards.
+ */
+export async function removePassword(currentPassword: string, fetch: Fetch): Promise<void> {
+	const res = await fetch('/api/auth/remove', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ currentPassword })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Log out this device. Idempotent — always succeeds. */
+export async function logout(fetch: Fetch): Promise<void> {
+	const res = await fetch('/api/auth/logout', { method: 'POST' });
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
 async function extractError(res: Response): Promise<string> {
 	const body = await res.text();
 	try {
 		const parsed = JSON.parse(body) as { message?: unknown };
-		if (typeof parsed.message === 'string') return parsed.message;
+		if (typeof parsed.message === 'string') {
+			// M2.2 Step 2: graceful re-entry on mid-session expiry. The
+			// gate's 401 body is EXACTLY this message (distinct from the
+			// login endpoint's 'incorrect password' 401, so the login form
+			// never bounces itself). When a client-side action hits it —
+			// a heart toggle, a note save — send the user back through
+			// /login instead of dead-ending in a generic error. The throw
+			// still happens below so callers' finally/busy cleanup runs.
+			if (res.status === 401 && parsed.message === 'authentication required' && browser) {
+				const from = window.location.pathname + window.location.search;
+				void goto(`/login?from=${encodeURIComponent(from)}`);
+			}
+			return parsed.message;
+		}
 	} catch {
 		// not JSON — fall through
 	}
