@@ -17,10 +17,12 @@
 			(page.route.id ?? '').startsWith('/series')
 	);
 
-	// M2.2 Step 1: the first-run /setup page is pre-everything — no
-	// settings hamburger there (same spirit as showTopNav: system pages
-	// don't get browse chrome). Every other page keeps it.
-	const showSettings = $derived(page.route.id !== '/setup');
+	// M2.2: the auth surfaces own their whole screen — no settings
+	// hamburger on the password-management page or the login screen
+	// (same spirit as showTopNav: system pages don't get browse
+	// chrome). Every other page keeps it.
+	const CHROMELESS = new Set(['/setup', '/login']);
+	const showSettings = $derived(!CHROMELESS.has(page.route.id ?? ''));
 
 	// Mirror the themeStore reactively onto <html data-theme="..." />.
 	// The inline boot script in app.html sets the attribute synchronously

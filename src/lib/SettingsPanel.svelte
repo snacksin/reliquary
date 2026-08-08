@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { getAuthStatus, logout } from '$lib/api';
 	import { themeStore, THEMES, type Theme } from '$lib/theme.svelte';
 	import {
 		fontPref,
@@ -30,8 +32,29 @@
 	let panelEl: HTMLDivElement | undefined = $state();
 	let buttonEl: HTMLButtonElement | undefined = $state();
 
+	// M2.2 Step 2: whether the gate is on, fetched lazily when the
+	// panel opens. Being able to see the panel while gated implies this
+	// device is logged in, so passwordSet alone decides whether the
+	// "Log out" control shows.
+	let gateOn = $state(false);
+
 	function toggle() {
 		open = !open;
+		if (open) {
+			getAuthStatus(fetch)
+				.then((s) => (gateOn = s.passwordSet))
+				.catch(() => (gateOn = false));
+		}
+	}
+
+	async function handleLogout() {
+		open = false;
+		try {
+			await logout(fetch);
+		} catch {
+			// idempotent server-side; a network blip still lands on /login
+		}
+		await goto('/login');
 	}
 
 	// Click-outside-to-close: only attach the listener while the panel
@@ -160,10 +183,13 @@
 			<nav class="panel-nav">
 				<a href="/tags" onclick={() => (open = false)}>Manage tags →</a>
 				<a href="/trash" onclick={() => (open = false)}>Trash →</a>
-				<!-- M2.2 Step 1 amendment: always visible — /setup handles both
-				     the set and already-set states gracefully. Step 2 turns this
-				     entry into the full set/change/remove flow. -->
+				<!-- Always visible — /setup is the LAN-password management
+				     page (set when unset; change/remove when set). -->
 				<a href="/setup" onclick={() => (open = false)}>LAN password →</a>
+				{#if gateOn}
+					<!-- type="button": this nav sits inside the panel's <form>. -->
+					<button type="button" class="logout" onclick={handleLogout}>Log out</button>
+				{/if}
 			</nav>
 		</form>
 	</div>
@@ -261,6 +287,19 @@
 		font-size: 0.85rem;
 	}
 	.panel-nav a:hover {
+		text-decoration: underline;
+	}
+	/* Link-styled action button — visually a .panel-nav sibling. */
+	.panel-nav .logout {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		font-size: 0.85rem;
+		color: var(--reader-link);
+		cursor: pointer;
+	}
+	.panel-nav .logout:hover {
 		text-decoration: underline;
 	}
 </style>

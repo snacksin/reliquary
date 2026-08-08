@@ -17,10 +17,8 @@
  * Safe against a running server: nothing caches the hash — the next
  * /api/auth/status or login reads the table fresh.
  *
- * Step 2 TODO: once sessions exist, this script must ALSO invalidate
- * every session (a reset that leaves live sessions valid would be a
- * hole). The same invalidation applies to the settings-panel
- * change/remove flows Step 2 adds.
+ * Also destroys EVERY session (a reset that left live sessions valid
+ * would be a hole — same rule as the /setup change/remove flows).
  */
 import Database from 'better-sqlite3';
 
@@ -48,4 +46,17 @@ if (result.changes === 1) {
 	console.log('password cleared — visit /setup to set a new one');
 } else {
 	console.log('no password was set — nothing to reset');
+}
+
+// Session invalidation runs regardless of whether a hash existed —
+// stale-session hygiene costs nothing and a reset must never leave a
+// device logged in. (Table-guarded: DB may pre-date migration 0028.)
+const hasSessions = db
+	.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'")
+	.get();
+if (hasSessions) {
+	const sessions = db.prepare('DELETE FROM sessions').run();
+	if (sessions.changes > 0) {
+		console.log(`signed out ${sessions.changes} device${sessions.changes === 1 ? '' : 's'}`);
+	}
 }
