@@ -32,7 +32,11 @@ export const load: PageLoad = async ({ params, fetch }) => {
 
 		return { workId: params.id, html, chapterNumber: meta.number, archivedAt: meta.archivedAt };
 	} catch (e) {
-		if (e && typeof e === 'object' && 'status' in e) throw e; // re-throw SvelteKit errors
-		throw error(404, e instanceof Error ? e.message : 'archived version not found');
+		// Error hygiene: re-throw SvelteKit errors/redirects untouched
+		// (preserves real statuses), but never promote a caught message
+		// into the rendered error page — an API-side detail would become
+		// page copy. Fixed literal only.
+		if (e && typeof e === 'object' && 'status' in e) throw e;
+		throw error(404, 'archived version not found');
 	}
 };

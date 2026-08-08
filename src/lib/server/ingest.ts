@@ -76,6 +76,25 @@ export class IngestError extends Error {
 	}
 }
 
+/**
+ * M2.2 Step 4 (error hygiene): the CLIENT-FACING text for an ingest
+ * failure, derived from the code — never from .message. Every string a
+ * stranger can see lives in this one switch, so no future IngestError
+ * construction site can accidentally put a path or an exception detail
+ * into a response body. The rich detail stays in .message/.cause and
+ * the server log.
+ */
+export function publicIngestMessage(e: IngestError): string {
+	switch (e.code) {
+		case 'parse':
+			return 'Invalid EPUB file';
+		case 'write':
+			return 'Failed to write work files';
+		default:
+			return 'Failed to record work';
+	}
+}
+
 /** Write a parsed work's chapter HTML + images into `targetDir`. */
 function writeWorkFiles(targetDir: string, chapters: ParsedChapter[], images: ParsedImage[]) {
 	mkdirSync(targetDir, { recursive: true });
@@ -360,8 +379,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 		// upload has none (the old extracted file won't exist post-swap).
 		const existingCover = db
 			.prepare(`SELECT cover_path, cover_source FROM works WHERE id = ?`)
-			.get(finalId) as { cover_path: string | null; cover_source: string | null };
-		const keepManualCover = existingCover.cover_source === 'manual';
+			.get(finalId) as { cover_path: string | null; cover_source: string | null } | undefined;
+		const keepManualCover = existingCover?.cover_source === 'manual';
 
 		// Skin precedence (WS Part 3): same rule as covers — a PASTED
 		// ('manual') skin always survives a re-drop; extracted ('epub') skins
