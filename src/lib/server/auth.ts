@@ -55,6 +55,22 @@ if (!(await argon2.verify(probe, 'reliquary-binding-probe'))) {
 	);
 }
 
+/**
+ * M2.2 Step 3: serialize every argon2 operation through one queue.
+ * Each hash/verify holds 64 MiB while it runs — a burst of parallel
+ * login attempts could multiply that into real memory pressure on a
+ * Pi 4. Concurrency 1 closes the amplification angle outright, and a
+ * single user never notices the queue. Failures propagate to their own
+ * caller; the chain itself always advances (the .catch keeps one
+ * rejection from wedging every later operation).
+ */
+let argon2Queue: Promise<unknown> = Promise.resolve();
+function enqueue<T>(op: () => Promise<T>): Promise<T> {
+	const result = argon2Queue.then(op);
+	argon2Queue = result.catch(() => undefined);
+	return result;
+}
+
 /** Thrown by verifyPassword when no password is set, so callers can never
  *  conflate "no credentials exist" (409) with "wrong password" (401). */
 export class NoPasswordSetError extends Error {
@@ -65,7 +81,7 @@ export class NoPasswordSetError extends Error {
 
 /** Hash a password with the pinned Argon2id parameters → PHC string. */
 export function hashPassword(password: string): Promise<string> {
-	return argon2.hash(password, ARGON2_PARAMS);
+	return enqueue(() => argon2.hash(password, ARGON2_PARAMS));
 }
 
 /** The stored PHC hash string, or null when no password is set. */
@@ -123,5 +139,5 @@ export function deleteHash(): boolean {
 export async function verifyPassword(password: string): Promise<boolean> {
 	const hash = getStoredHash();
 	if (hash === null) throw new NoPasswordSetError();
-	return argon2.verify(hash, password);
+	return enqueue(() => argon2.verify(hash, password));
 }

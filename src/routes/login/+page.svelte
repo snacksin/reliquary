@@ -19,6 +19,29 @@
 	let playing = $state(false);
 	let canvasEl: HTMLCanvasElement | undefined = $state();
 
+	// M2.2 Step 3: the bouncer's countdown. Set from the server's 429
+	// ('too many attempts — try again in Ns'), ticked down locally, and
+	// rendered in the design's voice instead of the raw message. No
+	// shake for a throttle — it's a different mood than a wrong guess.
+	let throttleSeconds = $state(0);
+	let throttleTimer: ReturnType<typeof setInterval> | undefined;
+
+	function startThrottleCountdown(seconds: number) {
+		throttleSeconds = seconds;
+		clearInterval(throttleTimer);
+		throttleTimer = setInterval(() => {
+			throttleSeconds -= 1;
+			if (throttleSeconds <= 0) {
+				throttleSeconds = 0;
+				clearInterval(throttleTimer);
+			}
+		}, 1000);
+	}
+
+	$effect(() => {
+		return () => clearInterval(throttleTimer);
+	});
+
 	// Resolved in the canvas $effect (client-only); handlers consult it.
 	let reduced = false;
 
@@ -195,6 +218,13 @@
 				await goto('/');
 				return;
 			}
+			const throttled = /^too many attempts — try again in (\d+)s$/.exec(msg);
+			if (throttled) {
+				error = null;
+				startThrottleCountdown(Number(throttled[1]));
+				return;
+			}
+			throttleSeconds = 0;
 			error = msg === 'incorrect password' ? "That's not the phrase — try again." : msg;
 			if (!reduced) {
 				shaking = true;
@@ -308,10 +338,18 @@
 				bind:value={pass}
 				disabled={busy}
 			/>
-			{#if error}
+			{#if throttleSeconds > 0}
+				<p class="error-line" role="alert">
+					The door is catching its breath — give it {throttleSeconds} second{throttleSeconds === 1
+						? ''
+						: 's'}.
+				</p>
+			{:else if error}
 				<p class="error-line" role="alert">{error}</p>
 			{/if}
-			<button type="submit" class="unlock" disabled={busy}>Unlock the library</button>
+			<button type="submit" class="unlock" disabled={busy || throttleSeconds > 0}>
+				Unlock the library
+			</button>
 		</form>
 
 		<div class="footer">
