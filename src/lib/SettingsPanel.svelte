@@ -160,6 +160,10 @@
 			<nav class="panel-nav">
 				<a href="/tags" onclick={() => (open = false)}>Manage tags →</a>
 				<a href="/trash" onclick={() => (open = false)}>Trash →</a>
+				<!-- M2.2 Step 1 amendment: always visible — /setup handles both
+				     the set and already-set states gracefully. Step 2 turns this
+				     entry into the full set/change/remove flow. -->
+				<a href="/setup" onclick={() => (open = false)}>LAN password →</a>
 			</nav>
 		</form>
 	</div>
