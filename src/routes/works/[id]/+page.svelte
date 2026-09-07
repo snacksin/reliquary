@@ -474,33 +474,39 @@
 		<div class="detail-header-text">
 			<div class="title-row">
 				<h1>{data.work.title}</h1>
-				{#if data.work.has_history}
-					<a
-						class="history-button"
-						href="/works/{data.work.id}/history"
-						title="View chapter edit history"
+				<!-- M2.2 5C amendment: the actions ride in one wrapper so the
+				     phone layout can move them as a unit (title → author →
+				     actions, via display:contents + order below). Desktop
+				     renders identically — same flex row, same gap. -->
+				<div class="title-actions">
+					{#if data.work.has_history}
+						<a
+							class="history-button"
+							href="/works/{data.work.id}/history"
+							title="View chapter edit history"
+						>
+							<span aria-hidden="true">📜</span> History
+						</a>
+					{/if}
+					<button
+						type="button"
+						class="read-toggle"
+						class:is-read={isRead}
+						onclick={toggleRead}
+						aria-pressed={isRead}
 					>
-						<span aria-hidden="true">📜</span> History
-					</a>
-				{/if}
-				<button
-					type="button"
-					class="read-toggle"
-					class:is-read={isRead}
-					onclick={toggleRead}
-					aria-pressed={isRead}
-				>
-					{isRead ? 'Mark as unread' : 'Mark as read'}
-				</button>
-				<button
-					class="heart"
-					class:filled={isFavorite}
-					onclick={toggleFavorite}
-					aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-					aria-pressed={isFavorite}
-				>
-					<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
-				</button>
+						{isRead ? 'Mark as unread' : 'Mark as read'}
+					</button>
+					<button
+						class="heart"
+						class:filled={isFavorite}
+						onclick={toggleFavorite}
+						aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+						aria-pressed={isFavorite}
+					>
+						<Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
+					</button>
+				</div>
 			</div>
 			<!-- Author Identity Part B: AO3-style byline with EVERY co-author its
 			     own link to that account's page ("A, B (acct)"), in byline order
@@ -837,6 +843,15 @@
 		display: flex;
 		/* Action buttons top-align to the title's first line so they don't
 		   drift to the vertical middle of a wrapped (two-line) title. */
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+	/* One wrapper for History + read-toggle + heart: same flex row and
+	   gap as .title-row itself, so desktop renders exactly as before the
+	   5C amendment; the wrapper exists so the phone layout below can
+	   reorder the actions as a unit. */
+	.title-actions {
+		display: flex;
 		align-items: flex-start;
 		gap: 0.75rem;
 	}
@@ -1207,13 +1222,33 @@
 		cursor: not-allowed;
 	}
 
-	/* M2.2 5C: at phone width the title + History + Mark-as-read + heart
-	   row can't fit single-file — without wrap the heart is pushed past
-	   the right edge and the page scrolls sideways. Wrap is phone-only;
-	   desktop keeps the one-liner (house 900px breakpoint). */
+	/* M2.2 5C (amended): at phone width the header reads identity-first —
+	   title → author → [actions] → rating → series (Allie's phone pass).
+	   Mechanics: .title-row dissolves (display: contents) so the h1 and
+	   the .title-actions unit become direct flex items of the
+	   .detail-header-text column, orderable around the byline. Negative
+	   orders pin the first three; everything after (rating, series, …)
+	   keeps default order 0 = DOM order. This also retires the earlier
+	   wrap fix: the actions row is ~300px wide on its own line, so
+	   nothing can push past the right edge. Desktop is untouched — the
+	   block is phone-only (house 900px breakpoint). */
 	@media (max-width: 900px) {
+		.detail-header-text {
+			display: flex;
+			flex-direction: column;
+		}
 		.title-row {
-			flex-wrap: wrap;
+			display: contents;
+		}
+		.title-row h1 {
+			order: -3;
+		}
+		.detail-header-text .author {
+			order: -2;
+		}
+		.title-actions {
+			order: -1;
+			margin-bottom: 0.5rem;
 		}
 	}
 </style>

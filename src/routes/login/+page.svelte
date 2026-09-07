@@ -132,7 +132,18 @@
 		window.addEventListener('pointerdown', onDown, { passive: true });
 		const tick = () => {
 			const now = performance.now();
-			c2d.clearRect(0, 0, window.innerWidth, window.innerHeight);
+			// M2.2 5C amendment: clear the FULL backing store under an
+			// identity transform, never a window-metrics rect. iOS updates
+			// innerHeight when the software keyboard opens without reliably
+			// firing `resize`, so a clearRect sized by live window metrics
+			// can shrink below the canvas backing — particles drawn past the
+			// clear line then accumulate as stuck streaks (Allie's phone
+			// pass, 2026-09-07; pre-existing since #95, unmasked when the
+			// 16px input fix removed the focus zoom).
+			c2d.save();
+			c2d.setTransform(1, 0, 0, 1, 0, 0);
+			c2d.clearRect(0, 0, cv.width, cv.height);
+			c2d.restore();
 			c2d.globalCompositeOperation = 'lighter';
 			parts = parts.filter((p) => {
 				const age = (now - p.born) / p.life;
