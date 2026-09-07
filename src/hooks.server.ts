@@ -36,7 +36,9 @@ import '$lib/server/sanitize';
 // the server at startup instead of 500ing the first login. Fail closed,
 // early. (Same contract as sanitize above, generalized to async init.)
 import { randomUUID } from 'node:crypto';
+import { building, dev } from '$app/environment';
 import { isPasswordSet } from '$lib/server/auth';
+import { startMdnsResponder } from '$lib/server/mdns';
 import { validateSession } from '$lib/server/session';
 import {
 	json,
@@ -98,6 +100,27 @@ function isCrossSiteFormSubmission(event: RequestEvent): boolean {
 		return new URL(origin).host !== event.url.host;
 	} catch {
 		return true;
+	}
+}
+
+// M2.2 Step 5B: broadcast reliquary.local while the prod server runs.
+// FAIL-OPEN — the opposite of the sanitize/auth imports above, on
+// purpose: those refuse to boot because serving without them is
+// unsafe; a name broadcast is a convenience and must never be able to
+// stop the library from serving (contract + wire map in mdns.ts).
+// Guarded: never during `vite build` module evaluation (no sockets at
+// build time) and never in dev — dev is laptop-localhost-only by
+// standing covenant, so it gets no LAN name. The try/catch HERE is the
+// fail-open contract's outer wall: mdns.ts guards its own internals,
+// but a throw anywhere in its entry path must still never reach module
+// init and kill the boot (the rider-1 drill found exactly that hole).
+if (!building && !dev) {
+	try {
+		startMdnsResponder();
+	} catch (e) {
+		console.error(
+			`[mdns] responder failed (${e instanceof Error ? e.message : e}) — continuing without name broadcast`
+		);
 	}
 }
 
