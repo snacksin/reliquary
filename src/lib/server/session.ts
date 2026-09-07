@@ -26,9 +26,29 @@ const RENEW_BELOW_DAYS = 45;
  * explicit: Reliquary serves plain HTTP on the LAN until the Pi move,
  * and SvelteKit's default infers `secure` from the hostname — on a LAN
  * IP it would default true and the browser would silently drop the
- * cookie. ⚠️ RETIREMENT BREADCRUMB — HTTPS era (Pi/Caddy, M2.2 Step 5
- * → PI.md): flip this to secure:true alongside the ORIGIN env change;
- * the two retire together.
+ * cookie.
+ *
+ * ⚠️ RETIREMENT BREADCRUMB — TLS day (Pi + Caddy, post-M2.2). The
+ * ORIGIN env var is GONE as of Step 5A (the CSRF check in
+ * hooks.server.ts is dynamic; nothing needs a configured origin).
+ * When Caddy terminates HTTPS in front of the node process, the
+ * bundle is:
+ *   1. flip secure:false → true here;
+ *   2. PROTOCOL_HEADER=x-forwarded-proto (adapter-node otherwise
+ *      can't know the client spoke https);
+ *   3. ADDRESS_HEADER=x-forwarded-for (behind a proxy every request
+ *      otherwise keys the login rate limiter to the proxy's address);
+ *   4. rerun scripts/csrf-guard.mjs against the proxied address.
+ * HOST_HEADER is NOT needed by default: Caddy v2's reverse_proxy
+ * passes the client's original Host through unchanged (unlike nginx),
+ * so the CSRF check's event.url.host keeps matching the browser's
+ * Origin host. SYMPTOM if a future Caddyfile overrides Host (e.g.
+ * `header_up Host {upstream_hostport}`): every form POST 403s while
+ * everything else works — #97's bug in a different hat — with
+ * [csrf …] log lines showing origin host reliquary.local vs request
+ * host localhost:3000. Remedy: restore Host pass-through, or set
+ * HOST_HEADER=x-forwarded-host (Caddy sends X-Forwarded-Host by
+ * default).
  */
 const COOKIE_OPTS = {
 	path: '/',
