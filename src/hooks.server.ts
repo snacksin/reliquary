@@ -38,7 +38,68 @@ import '$lib/server/sanitize';
 import { randomUUID } from 'node:crypto';
 import { isPasswordSet } from '$lib/server/auth';
 import { validateSession } from '$lib/server/session';
-import { json, redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import {
+	json,
+	redirect,
+	type Handle,
+	type HandleServerError,
+	type RequestEvent
+} from '@sveltejs/kit';
+
+/**
+ * M2.2 Step 5A — dynamic same-origin CSRF check. REPLACES Kit's
+ * build-time check (disabled via `csrf.trustedOrigins: ['*']` in
+ * svelte.config.js — see the load-bearing comment there): Kit compared
+ * the Origin header against ONE origin baked at build time, which is
+ * exactly how ORIGIN=http://localhost:3000 made every other LAN
+ * address 403 on uploads (#97's finding). This check instead requires
+ * the Origin's host to equal the request's own host — every address
+ * the box answers on passes, any foreign origin is refused, and no
+ * network topology is ever configured or baked anywhere. Survives
+ * DHCP renewal, reliquary.local (5B), the Pi move, and TLS day
+ * unchanged.
+ *
+ * PARITY WITH KIT'S CHECK (respond.js), enforced by
+ * scripts/csrf-guard.mjs:
+ *  - same methods: POST / PUT / PATCH / DELETE;
+ *  - same form content types (is_form_content_type + the sveltekit
+ *    binary form type); JSON is untouched, exactly as before;
+ *  - absent Origin → reject (Kit: `!request_origin` forbids);
+ *  - `Origin: null` (sandboxed iframe) / malformed / multi-valued →
+ *    reject (URL parse fails);
+ *  - comparison uses event.url.host, which IS the Host header after
+ *    URL normalization — both sides normalize identically (lowercase,
+ *    IPv6 brackets kept, default ports elided).
+ * DELIBERATELY STRICTER IN ONE WAY: this runs in dev AND prod (Kit's
+ * was prod-only, so a regression could hide until a build).
+ *
+ * Residual: DNS-rebinding form POSTs pass host==host — same as Kit in
+ * practice, since Kit never covered JSON mutations; the auth gate
+ * below is the real rebinding defense either way. Refusals go through
+ * the #97 hygiene shape: JSON {message, id} outward, [csrf id] detail
+ * inward — never a bare-text 403 again.
+ */
+const FORM_CONTENT_TYPES = new Set([
+	'application/x-www-form-urlencoded',
+	'multipart/form-data',
+	'text/plain',
+	'application/x-sveltekit-formdata'
+]);
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function isCrossSiteFormSubmission(event: RequestEvent): boolean {
+	if (!MUTATING_METHODS.has(event.request.method)) return false;
+	const type =
+		event.request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? '';
+	if (!FORM_CONTENT_TYPES.has(type)) return false;
+	const origin = event.request.headers.get('origin');
+	if (!origin) return true;
+	try {
+		return new URL(origin).host !== event.url.host;
+	} catch {
+		return true;
+	}
+}
 
 /**
  * M2.2 Step 4 (error hygiene): the choke point for UNEXPECTED errors.
@@ -87,6 +148,16 @@ const ALLOWED_ROUTES = new Set([
 ]);
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// CSRF first — cheap string work, mirrors where Kit's own check sat
+	// (before routing, before the gate).
+	if (isCrossSiteFormSubmission(event)) {
+		const id = randomUUID().slice(0, 8);
+		console.error(
+			`[csrf ${id}] refused ${event.request.method} ${event.url.pathname} — origin ${event.request.headers.get('origin') ?? '(absent)'}, host ${event.url.host}`
+		);
+		return json({ message: 'cross-site form submissions are forbidden', id }, { status: 403 });
+	}
+
 	if (!isPasswordSet()) {
 		event.locals.gated = false;
 		event.locals.authed = false;

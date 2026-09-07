@@ -93,12 +93,21 @@
 		try {
 			const res = await fetch('/api/bulk-upload', { method: 'POST', body: fd });
 			if (!res.ok) {
+				// Read the body ONCE as text, then try JSON — a non-JSON error
+				// body (Kit's old bare-text CSRF 403 was the blind case behind
+				// #97's finding) still surfaces instead of a mute
+				// "Server returned N". Capped like api.ts's extractError.
 				let detail = '';
 				try {
-					const body = await res.json();
-					if (typeof body?.message === 'string') detail = body.message;
+					const raw = await res.text();
+					try {
+						const body = JSON.parse(raw);
+						if (typeof body?.message === 'string') detail = body.message;
+					} catch {
+						detail = raw.slice(0, 200);
+					}
 				} catch {
-					// non-JSON response (network error page, etc.)
+					// unreadable body — fall through to the status line
 				}
 				throw new Error(detail || `Server returned ${res.status}`);
 			}
