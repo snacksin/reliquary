@@ -1206,4 +1206,14 @@
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
+
+	/* M2.2 5C: at phone width the title + History + Mark-as-read + heart
+	   row can't fit single-file — without wrap the heart is pushed past
+	   the right edge and the page scrolls sideways. Wrap is phone-only;
+	   desktop keeps the one-liner (house 900px breakpoint). */
+	@media (max-width: 900px) {
+		.title-row {
+			flex-wrap: wrap;
+		}
+	}
 </style>

@@ -94,3 +94,19 @@ body {
 	background: var(--reader-bg);
 	color: var(--reader-fg);
 }
+
+/* M2.2 5C — iOS input-zoom guard. Safari force-zooms the whole page
+   when a focused input's font-size is under 16px; one cause behind
+   several symptoms (search box, personal notes, the My Tags combobox,
+   the /tags grouping dialog). Floor every form control at 16px at
+   phone widths only — desktop appearance is untouched. !important is
+   load-bearing: Svelte's scoped component styles (.foo.svelte-hash)
+   out-rank a bare element selector, and this rule must beat every
+   per-component font-size to do its one job. */
+@media (max-width: 900px) {
+	input,
+	select,
+	textarea {
+		font-size: 16px !important;
+	}
+}

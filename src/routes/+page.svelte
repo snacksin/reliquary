@@ -809,5 +809,12 @@
 		.right-col {
 			padding-top: 0;
 		}
+		/* M2.2 5C: the heading + view toggle + sort + per-page row can't
+		   fit a phone width single-file — without wrap the List/Grid
+		   toggle is pushed past the right edge (unreachable in
+		   portrait). Wrap is phone-only; desktop keeps the one-liner. */
+		.middle-header {
+			flex-wrap: wrap;
+		}
 	}
 </style>
