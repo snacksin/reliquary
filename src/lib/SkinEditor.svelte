@@ -24,6 +24,9 @@
 	let draft = $state('');
 	let busy = $state(false);
 	let error = $state<string | null>(null);
+	// WS Part 4: what the last save did, in words — "12 chapters updated" is
+	// the signal that the page paste worked (a CSS-only paste says 0).
+	let notice = $state<string | null>(null);
 
 	// Replace pre-fills the STORED stylesheet (the sanitized/scoped form —
 	// the original paste isn't retained), NotesEditor's edit-mode precedent:
@@ -53,10 +56,23 @@
 	async function save() {
 		busy = true;
 		error = null;
+		notice = null;
 		try {
-			await saveSkin(workId, draft, fetch);
-			baseline = true;
+			const r = await saveSkin(workId, draft, fetch);
+			if (r.skin) baseline = true;
 			editing = false;
+			const n = r.chapters_updated;
+			const lead = r.skin ? 'Style saved · ' : '';
+			if (n > 0) {
+				notice = `${lead}${n} chapter${n === 1 ? '' : 's'} updated with the page's original formatting.`;
+			} else if (r.chapters_unchanged > 0) {
+				notice = `${lead}chapters already match the page — nothing to change.`;
+			} else if (r.skin) {
+				notice =
+					'Style saved. No chapter formatting came with it — paste the whole page source (Entire Work view) to get the hooks the style needs.';
+			} else {
+				notice = 'Nothing changed.';
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Could not save the creator's style";
 		} finally {
@@ -67,6 +83,7 @@
 	async function remove() {
 		busy = true;
 		error = null;
+		notice = null;
 		try {
 			await clearSkin(workId, fetch);
 			baseline = false;
@@ -86,8 +103,12 @@
 			class="skin-editor"
 			bind:value={draft}
 			spellcheck="false"
-			placeholder="On AO3: right-click the fic → View Page Source → Ctrl-F 'workskin' → copy the whole &lt;style&gt; block and paste it here (tags and all are fine)."
+			placeholder="On AO3: open the fic, click Entire Work, then right-click → View Page Source → select all → copy, and paste the whole page here. That brings over the creator's style AND the chapter formatting it needs (EPUBs lose the formatting). Pasting just the &lt;style&gt; block works too, but only for the style."
 		></textarea>
+		<p class="skin-hint">
+			Pasting the whole page replaces this fic's chapter text with AO3's copy. The old versions are
+			kept in History. Pictures will load from AO3 rather than from your library.
+		</p>
 		<div class="skin-actions">
 			<button type="button" class="secondary" onclick={cancel} disabled={busy}>Cancel</button>
 			<button type="button" class="primary" onclick={save} disabled={busy || draft.trim() === ''}>
@@ -96,8 +117,8 @@
 		</div>
 	{:else if baseline}
 		<p class="skin-status">
-			This fic has a creator's style — it applies in the reader (hide it per-fic from the reader's
-			settings ⚙).
+			This fic has a creator's style — it applies in the reader (turn all creator styles off from
+			the ☰ settings panel).
 		</p>
 		<div class="skin-actions start">
 			<button type="button" class="edit-btn" onclick={startEdit} disabled={busy}>Replace</button>
@@ -108,6 +129,7 @@
 	{:else}
 		<button type="button" class="edit-btn" onclick={startEdit}>Add creator's style</button>
 	{/if}
+	{#if notice}<p class="notice" role="status">{notice}</p>{/if}
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>
 
@@ -152,6 +174,20 @@
 		font-size: 0.9rem;
 		color: var(--reader-muted);
 		margin: 0 0 0.5rem;
+	}
+	.skin-hint {
+		font-size: 0.8rem;
+		color: var(--reader-muted);
+		margin: 0.4rem 0 0;
+		line-height: 1.45;
+	}
+	.notice {
+		font-size: 0.85rem;
+		color: var(--reader-fg);
+		background: var(--reader-card-bg);
+		border-radius: 4px;
+		padding: 0.4rem 0.7rem;
+		margin: 0.5rem 0 0;
 	}
 	.skin-actions {
 		display: flex;

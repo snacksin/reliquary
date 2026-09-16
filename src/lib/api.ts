@@ -188,19 +188,32 @@ export async function getSkin(workId: string, fetch: Fetch): Promise<string> {
 	return res.text();
 }
 
+/** Outcome of a creator's-style paste (WS Part 4). */
+export type SkinSaveResult = {
+	/** A usable skin was found and stored. */
+	skin: boolean;
+	/** Chapters whose HTML was replaced from the pasted page (0 for a CSS-only paste). */
+	chapters_updated: number;
+	/** Chapters the page carried that already matched the stored copy (a re-paste). */
+	chapters_unchanged: number;
+};
+
 /**
  * Paste the creator's style for a work (WS Part 3). `css` is whatever the
  * user copied — bare CSS, a <style> block, or a whole page source; the
  * server extracts, sanitizes and #workskin-scopes it through the #82
- * pipeline. Rejects (with a human message) when nothing usable survives.
+ * pipeline. A whole-page paste ALSO swaps in the page's chapter HTML (WS
+ * Part 4) so the skin's class hooks exist. Rejects (with a human message)
+ * when nothing usable survives.
  */
-export async function saveSkin(workId: string, css: string, fetch: Fetch): Promise<void> {
+export async function saveSkin(workId: string, css: string, fetch: Fetch): Promise<SkinSaveResult> {
 	const res = await fetch(`/api/works/${workId}/skin`, {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ css })
 	});
 	if (!res.ok) throw new Error(await extractError(res));
+	return (await res.json()) as SkinSaveResult;
 }
 
 /** Remove the work's creator style — back to the no-skin state (idempotent). */
