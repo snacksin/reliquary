@@ -191,3 +191,54 @@ export function sanitizeAndScopeSkin(rawCss: string | null): string | null {
 	const clean = sanitizeRules(noComments, true).trim();
 	return clean.length > 0 ? clean : null;
 }
+
+/**
+ * Calibre boilerplate filter (2026-09-15). Every EPUB Reliquary sees is
+ * Calibre-built (AO3's own downloads included), and Calibre ships a
+ * flattened stylesheet of its own making — `.calibreN` layout rules plus
+ * AO3-template classes (`.userstuff`, `.heading`, `.byline`, …). WS Part 2
+ * extracted that wholesale, so 58 fics carried "skins" that were nothing
+ * of the sort — and two of its rules did real harm: `.userstuff
+ * { font-family: serif }` overrode the reader's font choice, and fixed
+ * pixel heights on `.calibreN` image classes stretched pictures.
+ *
+ * Applied to the SANITIZED output (one rule per line), and only when the
+ * sheet is Calibre-shaped (has at least one `.calibre` rule): drop every
+ * rule whose selector is exactly one of the boilerplate classes. A real
+ * author skin embedded in a Calibre EPUB keeps its real rules; a pasted
+ * AO3 page skin never has `.calibre` rules, so it passes through untouched
+ * (a genuine skin may legitimately style `#workskin .userstuff`). Empty
+ * `@media` shells left behind are removed. Null when nothing survives.
+ */
+const CALIBRE_BOILERPLATE_RULE =
+	/^#workskin \.(?:calibre\d*|userstuff\d*|byline|endnote-link|message|tags|toc-heading|heading|meta|hr) \{[^}]*\}\s*$/;
+
+/**
+ * Calibre's rendering of a bare `<hr>`, byte-for-byte as our sanitizer
+ * emits it. Calibre sometimes hangs this on an author-named class instead
+ * of `.hr`, so it's matched by BODY rather than selector — the body is
+ * far too specific to be anyone's real rule.
+ */
+const CALIBRE_HR_BODY =
+	'{ color: gray; display: block; height: 2px; margin: 0.5em auto; border: currentColor inset 1px }';
+
+export function stripCalibreBoilerplate(css: string | null): string | null {
+	if (!css) return null;
+	// The class-name filter needs the `.calibre` marker (those names are only
+	// unmistakable in a Calibre sheet); the hr-body match is unconditional —
+	// it's Calibre's exact output and can outlive the marker (a sheet the
+	// boot cleanup already trimmed once, before this rule existed).
+	const calibreShaped = /^#workskin \.calibre\d* \{/m.test(css);
+	const kept = css
+		.split('\n')
+		.filter(
+			(line) =>
+				!(calibreShaped && CALIBRE_BOILERPLATE_RULE.test(line)) &&
+				!line.trimEnd().endsWith(CALIBRE_HR_BODY)
+		)
+		.join('\n')
+		.replace(/@[a-z-]+[^{]*\{\s*\}/g, '')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+	return kept.length > 0 ? kept : null;
+}

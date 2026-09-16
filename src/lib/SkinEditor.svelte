@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSkin, saveSkin, clearSkin } from '$lib/api';
+	import { skinsPref } from '$lib/prefs.svelte';
 
 	/**
 	 * "Creator's style" paste box (WS Part 3). AO3 ships the real work skin
@@ -116,10 +117,22 @@
 			</button>
 		</div>
 	{:else if baseline}
-		<p class="skin-status">
-			This fic has a creator's style — it applies in the reader (turn all creator styles off from
-			the ☰ settings panel).
-		</p>
+		{#if skinsPref.value === 'hide'}
+			<!-- Same reminder as the reader's (Reader.svelte): the hide switch is
+			     global + per-browser, so surface it here too, where the skin
+			     was just pasted. -->
+			<div class="skin-hidden" role="status">
+				<span>
+					This fic has a creator's style, but creator's styles are switched off in this browser.
+				</span>
+				<button type="button" onclick={() => (skinsPref.value = 'show')}>Show styles</button>
+			</div>
+		{:else}
+			<p class="skin-status">
+				This fic has a creator's style — it applies in the reader (turn all creator styles off from
+				the ☰ settings panel).
+			</p>
+		{/if}
 		<div class="skin-actions start">
 			<button type="button" class="edit-btn" onclick={startEdit} disabled={busy}>Replace</button>
 			<button type="button" class="edit-btn" onclick={remove} disabled={busy}>
@@ -174,6 +187,35 @@
 		font-size: 0.9rem;
 		color: var(--reader-muted);
 		margin: 0 0 0.5rem;
+	}
+	.skin-hidden {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin: 0 0 0.6rem;
+		padding: 0.6rem 0.9rem;
+		border: 1px solid var(--reader-accent);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--reader-accent) 12%, transparent);
+		font-size: 0.88rem;
+		line-height: 1.45;
+		color: var(--reader-fg);
+	}
+	.skin-hidden button {
+		flex: 0 0 auto;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.3rem 0.8rem;
+		border: 1px solid var(--reader-accent);
+		border-radius: 4px;
+		background: var(--reader-accent);
+		color: var(--reader-bg);
+		cursor: pointer;
+	}
+	.skin-hidden button:hover {
+		opacity: 0.9;
 	}
 	.skin-hint {
 		font-size: 0.8rem;

@@ -14,6 +14,15 @@
 	// with no flash — and the gate script below covers the saved-hide case.
 	const showSkin = $derived(hasSkin && skinsPref.value === 'show');
 
+	// Hidden-skin reminder (2026-09-15): the hide switch is GLOBAL and
+	// per-browser, and the reader otherwise gives no sign that a skinned fic
+	// is being shown plain — Allie lost time to exactly this. When the fic
+	// has a skin and the switch is on, show a quiet notice with a one-click
+	// way back. Client-only by nature (the pref reads 'show' during SSR), so
+	// it appears after hydration; theme-accent styling, never red/yellow
+	// (red reads as danger, yellow vanishes on sepia — Allie's call).
+	const skinHidden = $derived(hasSkin && skinsPref.value === 'hide');
+
 	// Pre-hydration anti-flash for a saved "hide": SSR can't read
 	// localStorage, so the link above is already in the document — this gate
 	// rides immediately after it and disables it BEFORE first paint (the
@@ -50,6 +59,14 @@
 </a>
 
 <article class="reader">
+	{#if skinHidden}
+		<div class="skin-hidden" role="status">
+			<span>
+				This fic has a creator's style, but creator's styles are switched off in this browser.
+			</span>
+			<button type="button" onclick={() => (skinsPref.value = 'show')}>Show styles</button>
+		</div>
+	{/if}
 	<!-- WS Part 2: the #workskin container — the AO3 idiom. Every stored
 	     skin selector is prefixed with #workskin at ingest, so creator CSS
 	     can only ever style THIS subtree; relative+isolate keep absolute
@@ -115,5 +132,38 @@
 	#workskin {
 		position: relative;
 		isolation: isolate;
+	}
+	/* Hidden-skin reminder — accent border + light accent tint (the
+	   personal-tag chip language), so it reads as a notice in all three
+	   themes without shouting. */
+	.skin-hidden {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin: 0 0 1.5rem;
+		padding: 0.6rem 0.9rem;
+		border: 1px solid var(--reader-accent);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--reader-accent) 12%, transparent);
+		font-family: system-ui, sans-serif;
+		font-size: 0.88rem;
+		line-height: 1.45;
+		color: var(--reader-fg);
+	}
+	.skin-hidden button {
+		flex: 0 0 auto;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.3rem 0.8rem;
+		border: 1px solid var(--reader-accent);
+		border-radius: 4px;
+		background: var(--reader-accent);
+		color: var(--reader-bg);
+		cursor: pointer;
+	}
+	.skin-hidden button:hover {
+		opacity: 0.9;
 	}
 </style>

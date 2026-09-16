@@ -24,7 +24,7 @@ import {
 import { computeContentHash, countWords, hashChapterContent } from './identity';
 import { syncWorkSeries } from './series';
 import { extractWorkAuthors, syncWorkAuthors } from './authors';
-import { sanitizeAndScopeSkin } from './skin';
+import { sanitizeAndScopeSkin, stripCalibreBoilerplate } from './skin';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -285,8 +285,10 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// above are untouched (#64 hash-from-raw stays byte-identical).
 	// WS Part 2: sanitize + #workskin-scope the creator CSS once, up front —
 	// what's stored is only ever this cleaned form. Null when the EPUB ships
-	// no CSS or nothing survives the scrub. Not a hash input.
-	const skinCss = sanitizeAndScopeSkin(parsed.skinCss);
+	// no CSS or nothing survives the scrub. Not a hash input. Calibre's own
+	// flattened stylesheet is NOT a skin — strip it (skin.ts) so a plain fic
+	// doesn't come in wearing a font override and stretched images.
+	const skinCss = stripCalibreBoilerplate(sanitizeAndScopeSkin(parsed.skinCss));
 
 	const summaryChapter = parsed.chapters.find((c) => c.kind === 'summary');
 	const workAuthors =
