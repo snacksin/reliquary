@@ -8,6 +8,7 @@ import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
 import { backfillDecodeText, backfillFixHeadings } from './textdecode';
 import { backfillAuthorIdentity } from './authors';
+import { backfillStripCalibreSkins } from './skincleanup';
 
 let cached: Database.Database | undefined;
 
@@ -133,6 +134,15 @@ export function getDb(): Database.Database {
 		backfillAuthorIdentity(db);
 	} catch (e) {
 		console.error('[author-backfill] failed', e);
+	}
+
+	// Skin cleanup (2026-09-15): strip Calibre's boilerplate stylesheet from
+	// the skins extracted before ingest learned to filter it. Files +
+	// works.skin_path only; guarded so it can never block boot.
+	try {
+		backfillStripCalibreSkins(db);
+	} catch (e) {
+		console.error('[skin-cleanup] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more
