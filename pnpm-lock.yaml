@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  cookie: ^0.7.0
-
 importers:
 
   .:
@@ -766,8 +763,8 @@ packages:
   commondir@1.0.1:
     resolution: {integrity: sha512-W9pAhw0ja1Edb5GVdIF1mjZw/ASI0AlShXM83UUGe2DVr5TdAPEA1OA8m/g8zWp9x6On7gqufY+FatDbC3MDQg==}
 
-  cookie@0.7.2:
-    resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
+  cookie@0.6.0:
+    resolution: {integrity: sha512-U71cyTamuh1CRNCfpGY6to28lxvNwPG4Guz/EVjgf3Jmzv0vlDp1atT9eS5dDjMYHucpHbWns6Lwf3BKz6svdw==}
     engines: {node: '>= 0.6'}
 
   crlf-normalize@1.0.20:
@@ -1320,8 +1317,8 @@ packages:
     peerDependencies:
       postcss: ^8.4.29
 
-  postcss-selector-parser@7.1.1:
-    resolution: {integrity: sha512-orRsuYpJVw8LdAwqqLykBj9ecS5/cRHlI5+nvTo8LcCKmzDmqVORXtOIYEEQuL9D4BxtA1lm5isAqzQZCoQ6Eg==}
+  postcss-selector-parser@7.1.6:
+    resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
     engines: {node: '>=4'}
 
   postcss@8.5.12:
@@ -2018,7 +2015,7 @@ snapshots:
       '@sveltejs/vite-plugin-svelte': 7.0.0(svelte@5.55.7(@typescript-eslint/types@8.59.1))(vite@8.0.16(@types/node@24.12.2))
       '@types/cookie': 0.6.0
       acorn: 8.18.0
-      cookie: 0.7.2
+      cookie: 0.6.0
       devalue: 5.9.0
       esm-env: 1.2.2
       kleur: 4.1.5
@@ -2244,7 +2241,7 @@ snapshots:
 
   commondir@1.0.1: {}
 
-  cookie@0.7.2: {}
+  cookie@0.6.0: {}
 
   crlf-normalize@1.0.20(ts-toolbelt@9.6.0):
     dependencies:
@@ -2732,7 +2729,7 @@ snapshots:
     dependencies:
       postcss: 8.5.12
 
-  postcss-selector-parser@7.1.1:
+  postcss-selector-parser@7.1.6:
     dependencies:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
@@ -2921,7 +2918,7 @@ snapshots:
       espree: 10.4.0
       postcss: 8.5.12
       postcss-scss: 4.0.9(postcss@8.5.12)
-      postcss-selector-parser: 7.1.1
+      postcss-selector-parser: 7.1.6
       semver: 7.7.4
     optionalDependencies:
       svelte: 5.55.7(@typescript-eslint/types@8.59.1)
