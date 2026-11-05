@@ -1,5 +1,7 @@
-Self-hosted webfonts for the /login page (no Google Fonts at runtime —
-Reliquary's offline principle).
+Self-hosted webfonts (no Google Fonts at runtime — Reliquary's offline
+principle).
+
+For the /login page:
 
 - cormorant-garamond-latin-400.woff2
   Cormorant Garamond, weight 400, latin subset.
@@ -11,6 +13,17 @@ Reliquary's offline principle).
   Copyright 2020 The Jost Project Authors
   (https://github.com/indestructible-type/Jost)
 
-Both are licensed under the SIL Open Font License, Version 1.1:
-https://openfontlicense.org
 Files as served by Google Fonts (fonts.gstatic.com), fetched 2026-08-08.
+
+For the reader's font picker (@font-face rules in src/app.css):
+
+- atkinson-hyperlegible-{latin,latin-ext}-{400,700}[-italic].woff2
+  Atkinson Hyperlegible, weights 400 and 700, roman and italic,
+  latin and latin-ext subsets (8 files).
+  Copyright 2020 Braille Institute of America, Inc.
+  (https://www.brailleinstitute.org/freefont)
+
+Files as served by Google Fonts (fonts.gstatic.com), fetched 2026-11-05.
+
+All of these are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org
