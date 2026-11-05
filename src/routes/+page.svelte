@@ -220,11 +220,11 @@
 	});
 </script>
 
-<svelte:head><title>Reliquary (POC)</title></svelte:head>
+<svelte:head><title>Reliquary</title></svelte:head>
 
 <main class="library">
 	<header class="library-header">
-		<h1>Reliquary (POC)</h1>
+		<h1>Reliquary</h1>
 		<button class="upload" onclick={() => fileInput?.click()} disabled={uploading}>
 			{uploading ? 'Uploading…' : 'Upload EPUB'}
 		</button>
