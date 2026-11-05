@@ -55,10 +55,19 @@ export function resumeAtSavedScroll(w: Work): boolean {
  * Resume link. `?continue=1` tells the reader to restore the saved scroll
  * position; added only for the in-progress chapter. A first-unread jump
  * (resurfaced work) is a plain link so the reader opens it at the top.
+ *
+ * Cross-device handoff: the resume link also carries `&at=<permille>`, the
+ * last saved position as a fraction of the chapter (from whichever device
+ * wrote it). Only in the `continue=1` branch, where `last_read.chapter` IS
+ * the target chapter, so `at` always belongs to the chapter it opens. The
+ * reader decides whether it's another device's spot (see ch/[n]/+page.svelte).
+ * Null (rows from before the handoff) → no `at` → today's behavior.
  */
 export function continueHref(w: Work): string {
 	const ch = resumeChapter(w);
-	return resumeAtSavedScroll(w) ? `/works/${w.id}/ch/${ch}?continue=1` : `/works/${w.id}/ch/${ch}`;
+	if (!resumeAtSavedScroll(w)) return `/works/${w.id}/ch/${ch}`;
+	const at = w.last_read?.scroll_permille;
+	return `/works/${w.id}/ch/${ch}?continue=1${at != null ? `&at=${at}` : ''}`;
 }
 
 /**

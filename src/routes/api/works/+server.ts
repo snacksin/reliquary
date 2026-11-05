@@ -14,6 +14,7 @@ type Row = {
 	chapters_updated_at: string | null;
 	last_chapter: number | null;
 	last_scroll_y: number | null;
+	last_scroll_permille: number | null;
 	last_max_read_chapter: number | null;
 	last_dismissed_at: string | null;
 	last_updated_at: string | null;
@@ -215,6 +216,7 @@ function rowToWork(r: Row) {
 				? {
 						chapter: r.last_chapter,
 						scroll_y: r.last_scroll_y,
+						scroll_permille: r.last_scroll_permille,
 						max_read_chapter: r.last_max_read_chapter,
 						dismissed_at: r.last_dismissed_at,
 						updated_at: r.last_updated_at
@@ -231,7 +233,7 @@ function rowToWork(r: Row) {
 const SELECT_COLUMNS = `
   w.id, w.title, w.author, w.summary, w.chapter_count, w.word_count,
   w.favorited_at, w.read_at, w.chapters_updated_at, w.cover_path,
-  rp.last_chapter, rp.last_scroll_y,
+  rp.last_chapter, rp.last_scroll_y, rp.last_scroll_permille,
   rp.max_read_chapter AS last_max_read_chapter,
   rp.dismissed_at AS last_dismissed_at,
   rp.updated_at AS last_updated_at,
