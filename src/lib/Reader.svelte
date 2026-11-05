@@ -129,6 +129,19 @@
 	.reader :global(a:visited) {
 		color: var(--reader-link-visited);
 	}
+	/* AO3 EPUBs mark an author's centered lines (scene breaks like *** and
+	   ---, lyrics, text messages) with `class="message"`, and the EPUB's own
+	   stylesheet centers that class: 182 fics, ~5,900 lines in the
+	   2026-11-05 library. It lives HERE, in the reader, not in skins: it's
+	   AO3's template formatting rather than a creator's style, so it must
+	   hold with "Hide creator's styles" on, and for fics whose extracted
+	   sheet was dropped as Calibre boilerplate (skin.ts strips `.message`
+	   from skins on purpose, so plain fics don't look "skinned"). A real
+	   skin's `#workskin .message` still out-ranks this. */
+	.reader :global(.message) {
+		text-align: center;
+		margin: 1em 0;
+	}
 	#workskin {
 		position: relative;
 		isolation: isolate;

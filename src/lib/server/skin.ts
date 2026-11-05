@@ -209,6 +209,12 @@ export function sanitizeAndScopeSkin(rawCss: string | null): string | null {
  * AO3 page skin never has `.calibre` rules, so it passes through untouched
  * (a genuine skin may legitimately style `#workskin .userstuff`). Empty
  * `@media` shells left behind are removed. Null when nothing survives.
+ *
+ * `.message` is NOT harmless boilerplate to lose, though: it's how AO3
+ * EPUBs center an author's lines (scene breaks, lyrics). Stripping it here
+ * is still right, but only because the reader styles `.message` itself
+ * (Reader.svelte, 2026-11-05). Don't remove that rule without putting
+ * `message` back to work somewhere.
  */
 const CALIBRE_BOILERPLATE_RULE =
 	/^#workskin \.(?:calibre\d*|userstuff\d*|byline|endnote-link|message|tags|toc-heading|heading|meta|hr) \{[^}]*\}\s*$/;
