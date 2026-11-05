@@ -5,6 +5,12 @@ export type LastRead = {
 	chapter: number;
 	scroll_y: number;
 	/**
+	 * The same position as a fraction of the chapter text, 0–1000. Device-
+	 * independent, so it's what the Continue Reading link hands to another
+	 * device (`&at=`). Null on rows written before the handoff existed.
+	 */
+	scroll_permille: number | null;
+	/**
 	 * Furthest real chapter read to ~95% (the reader's auto-mark high-water
 	 * mark). Drives "finished" in Continue Reading: a work is finished when
 	 * `max_read_chapter >= chapter_count`. Null on pre-existing rows (read as
@@ -456,13 +462,14 @@ export async function saveProgress(
 	workId: string,
 	chapter: number,
 	scroll_y: number,
+	scroll_permille: number,
 	completed: boolean,
 	fetch: Fetch
 ): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/progress`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ chapter, scroll_y: Math.round(scroll_y), completed })
+		body: JSON.stringify({ chapter, scroll_y: Math.round(scroll_y), scroll_permille, completed })
 	});
 	if (!res.ok) throw new Error(await extractError(res));
 }

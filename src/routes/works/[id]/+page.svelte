@@ -216,6 +216,7 @@
 		readAgainProgress = {
 			chapter: 1,
 			scroll_y: 0,
+			scroll_permille: null,
 			max_read_chapter: 0,
 			dismissed_at: null,
 			updated_at: new Date().toISOString()
@@ -224,6 +225,7 @@
 			await readAgain(data.work.id, fetch);
 			for (const ch of realChapters) {
 				localStorage.removeItem(`scroll:${data.work.id}:${ch.number}`);
+				localStorage.removeItem(`scrollp:${data.work.id}:${ch.number}`);
 			}
 		} catch (e) {
 			readAgainProgress = previous; // revert the optimistic flip

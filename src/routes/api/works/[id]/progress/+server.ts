@@ -13,8 +13,13 @@ import { getDb } from '$lib/server/db';
  *   again here defensively (DB column is INTEGER).
  * - The localStorage-side write on the reader stays the source of
  *   truth for restore-on-reload (see M1.md gotchas + Step 9 logic);
- *   this row is for the library's "Continue Reading" surfacing and
- *   future cross-device hand-off.
+ *   this row is for the library's "Continue Reading" surfacing and the
+ *   cross-device handoff.
+ * - `scroll_permille` (optional, integer 0–1000) is the same position as a
+ *   fraction of the chapter text: the device-independent half that the
+ *   Continue Reading link carries to another device as `&at=`. Absent (a
+ *   stale tab still running pre-handoff code) stores NULL = "unknown", so
+ *   an old client can never plant a wrong spot.
  * - `completed` (the reader's ~95%-scroll auto-mark) raises the
  *   `max_read_chapter` high-water mark, which is what makes a work
  *   "finished" (max_read_chapter >= chapter_count) and lets it
@@ -27,6 +32,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const body = (await request.json().catch(() => null)) as {
 		chapter?: unknown;
 		scroll_y?: unknown;
+		scroll_permille?: unknown;
 		completed?: unknown;
 	} | null;
 
@@ -42,6 +48,13 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (body.completed !== undefined && typeof body.completed !== 'boolean') {
 		throw error(400, 'invalid completed');
 	}
+	const permille = body.scroll_permille ?? null;
+	if (
+		permille !== null &&
+		!(Number.isInteger(permille) && (permille as number) >= 0 && (permille as number) <= 1000)
+	) {
+		throw error(400, 'invalid scroll_permille');
+	}
 
 	const db = getDb();
 	const exists = db.prepare('SELECT 1 FROM works WHERE id = ?').get(params.id);
@@ -56,15 +69,23 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	db.prepare(
 		`INSERT INTO reading_progress
-		   (work_id, last_chapter, last_scroll_y, max_read_chapter, dismissed_at, updated_at)
-		 VALUES (?, ?, ?, NULLIF(?, 0), NULL, CURRENT_TIMESTAMP)
+		   (work_id, last_chapter, last_scroll_y, last_scroll_permille, max_read_chapter, dismissed_at, updated_at)
+		 VALUES (?, ?, ?, ?, NULLIF(?, 0), NULL, CURRENT_TIMESTAMP)
 		 ON CONFLICT(work_id) DO UPDATE SET
 		   last_chapter = excluded.last_chapter,
 		   last_scroll_y = excluded.last_scroll_y,
+		   last_scroll_permille = excluded.last_scroll_permille,
 		   max_read_chapter = MAX(COALESCE(max_read_chapter, 0), ?),
 		   dismissed_at = NULL,
 		   updated_at = CURRENT_TIMESTAMP`
-	).run(params.id, body.chapter, Math.round(body.scroll_y), completedChapter, completedChapter);
+	).run(
+		params.id,
+		body.chapter,
+		Math.round(body.scroll_y),
+		permille,
+		completedChapter,
+		completedChapter
+	);
 
 	return new Response(null, { status: 204 });
 };
@@ -102,6 +123,7 @@ export const PUT: RequestHandler = ({ params }) => {
 		 ON CONFLICT(work_id) DO UPDATE SET
 		   last_chapter = 1,
 		   last_scroll_y = 0,
+		   last_scroll_permille = NULL,
 		   max_read_chapter = 0,
 		   dismissed_at = NULL,
 		   updated_at = CURRENT_TIMESTAMP`

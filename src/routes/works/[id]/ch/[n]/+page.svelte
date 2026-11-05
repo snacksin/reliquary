@@ -9,6 +9,10 @@
 	let { data }: PageProps = $props();
 
 	const key = $derived(`scroll:${page.params.id}:${page.params.n}`);
+	// The permille this device last SENT for this chapter. Lets a Continue
+	// Reading arrival tell "the server's spot is my own" (restore exact
+	// pixels from `key`) from "another device moved it" (restore `at`).
+	const pkey = $derived(`scrollp:${page.params.id}:${page.params.n}`);
 
 	// Prev/next walk real chapters only (1..N). No "Previous" on ch 1,
 	// no "Next" on ch N, neither on a single-chapter fic. Plain links
@@ -43,17 +47,56 @@
 	//
 	// localStorage stays the source of truth for restore-on-reload (Step 9
 	// invariant); the server POST is purely additive — it drives the library's
-	// "Continue Reading" surfacing.
-	function recordProgress() {
+	// "Continue Reading" surfacing and the cross-device handoff.
+	//
+	// `handoffArrival`: this record is the arrival write right after restoring
+	// ANOTHER device's spot. The read-mark is suppressed then (ROADMAP
+	// non-negotiable: a restore must never auto-mark a fic read, even when the
+	// spot lands near the bottom). Scrolling afterwards marks it as usual.
+	function recordProgress(handoffArrival = false) {
 		const id = page.params.id;
 		const ch = Number(page.params.n);
 		if (!(Number.isInteger(ch) && ch >= 1 && id)) return;
 		const y = window.scrollY;
-		const completed = y + window.innerHeight >= document.documentElement.scrollHeight * 0.95;
+		const p = toPermille(y);
+		const completed =
+			!handoffArrival && y + window.innerHeight >= document.documentElement.scrollHeight * 0.95;
 		localStorage.setItem(key, String(y));
-		saveProgress(id, ch, y, completed, fetch).catch(() => {
+		localStorage.setItem(pkey, String(p));
+		saveProgress(id, ch, y, p, completed, fetch).catch(() => {
 			// best-effort: don't bother the user about transient network failures
 		});
+	}
+
+	// Cross-device position = fraction (0–1000) of the CHAPTER TEXT, not the
+	// page: the header and footer differ in height per device, so measuring
+	// against `article.reader` keeps them out of the ratio. Screen-level
+	// accuracy by design (text reflows per device); line-level is M4.
+	function textBox(): { top: number; height: number } {
+		const el = document.querySelector('article.reader');
+		if (el) {
+			const r = el.getBoundingClientRect();
+			return { top: r.top + window.scrollY, height: r.height };
+		}
+		return { top: 0, height: document.documentElement.scrollHeight };
+	}
+
+	function toPermille(y: number): number {
+		const { top, height } = textBox();
+		if (height <= 0) return 0;
+		return Math.min(1000, Math.max(0, Math.round(((y - top) / height) * 1000)));
+	}
+
+	function fromPermille(p: number): number {
+		const { top, height } = textBox();
+		return Math.max(0, top + (p / 1000) * height);
+	}
+
+	/** `?at=` as a permille, or null when absent/malformed. */
+	function parseAt(raw: string | null): number | null {
+		if (raw === null) return null;
+		const n = Number(raw);
+		return Number.isInteger(n) && n >= 0 && n <= 1000 ? n : null;
 	}
 
 	function onScroll() {
@@ -76,13 +119,28 @@
 		const linkWithoutContinue =
 			nav?.type === 'link' && page.url.searchParams.get('continue') !== '1';
 
+		// Cross-device handoff ("newest spot wins", Allie 2026-11-05). A
+		// Continue Reading LINK carries `at` = the server's latest spot for this
+		// chapter. If it isn't the permille this device last sent, another
+		// device moved it since → restore `at`. Otherwise it's our own spot →
+		// fall through to the exact-pixel localStorage restore, so same-device
+		// behavior is unchanged. Only on link clicks: reload and Back/Forward
+		// ignore a lingering `&at=` in the URL and restore this device's spot.
+		let handoff = false;
+
 		if (linkWithoutContinue) {
 			window.scrollTo(0, 0);
 		} else {
-			const saved = localStorage.getItem(key);
-			if (saved !== null) {
-				const y = Number(saved);
-				if (Number.isFinite(y)) window.scrollTo(0, y);
+			const at = nav?.type === 'link' ? parseAt(page.url.searchParams.get('at')) : null;
+			if (at !== null && localStorage.getItem(pkey) !== String(at)) {
+				window.scrollTo(0, fromPermille(at));
+				handoff = true;
+			} else {
+				const saved = localStorage.getItem(key);
+				if (saved !== null) {
+					const y = Number(saved);
+					if (Number.isFinite(y)) window.scrollTo(0, y);
+				}
 			}
 		}
 
@@ -90,10 +148,12 @@
 		// scrollTo have settled, then record progress for the chapter we landed
 		// on — even if the user never scrolls it (a short chapter that fits on
 		// screen is "read to end" the moment it's shown). Runs on the initial
-		// load too (afterNavigate fires on type === 'enter').
+		// load too (afterNavigate fires on type === 'enter'). The restore above
+		// MUST stay before this write: recording first would overwrite the
+		// other device's spot with this device's 0 (the handoff erasing itself).
 		setTimeout(() => {
 			suppress = false;
-			recordProgress();
+			recordProgress(handoff);
 		}, 100);
 	});
 
