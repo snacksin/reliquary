@@ -39,6 +39,8 @@ import { randomUUID } from 'node:crypto';
 import { building, dev } from '$app/environment';
 import { isPasswordSet } from '$lib/server/auth';
 import { startMdnsResponder } from '$lib/server/mdns';
+import { getDb } from '$lib/server/db';
+import { startNightly } from '$lib/server/nightly';
 import { validateSession } from '$lib/server/session';
 import {
 	json,
@@ -120,6 +122,15 @@ if (!building && !dev) {
 	} catch (e) {
 		console.error(
 			`[mdns] responder failed (${e instanceof Error ? e.message : e}) — continuing without name broadcast`
+		);
+	}
+	// Pi plan step 1: nightly trash purge + login sweep + backup. Same
+	// fail-open outer wall as the responder above (contract in nightly.ts).
+	try {
+		startNightly(getDb);
+	} catch (e) {
+		console.error(
+			`[nightly] scheduler failed (${e instanceof Error ? e.message : e}) — continuing without nightly jobs`
 		);
 	}
 }
