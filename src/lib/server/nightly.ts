@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { createBackup } from './backup.js';
+import { decide, nextRun } from './nightlyclock';
 import { purgeExpired } from './purge';
 import { purgeExpiredSessions } from './session';
 
@@ -40,14 +41,6 @@ function parseAt(raw: string | undefined): { h: number; m: number } {
 	return { h: 3, m: 30 };
 }
 
-/** The next local h:m strictly after `from` (recomputed each night, so DST shifts are absorbed). */
-function nextRun(at: { h: number; m: number }, from = new Date()): Date {
-	const next = new Date(from);
-	next.setHours(at.h, at.m, 0, 0);
-	if (next <= from) next.setDate(next.getDate() + 1);
-	return next;
-}
-
 export function startNightly(getDb: () => Database.Database): void {
 	if ((process.env.RELIQUARY_NIGHTLY ?? '').trim().toLowerCase() === 'off') {
 		console.log('[nightly] disabled (RELIQUARY_NIGHTLY off)');
@@ -65,10 +58,31 @@ export function startNightly(getDb: () => Database.Database): void {
 				: 'backups off (RELIQUARY_BACKUP_DIR not set)')
 	);
 
-	const schedule = () => {
-		const when = nextRun(at);
-		setTimeout(runOnce, when.getTime() - Date.now()).unref();
-		console.log(`[nightly] next run ${when.toString()}`);
+	// Once a minute, ask the wall clock whether it's time (nightlyclock.ts
+	// says why this isn't one long setTimeout).
+	const TICK_MS = 60_000;
+	let due = nextRun(at);
+	let running = false;
+
+	const plan = () => {
+		due = nextRun(at);
+		console.log(`[nightly] next run ${due.toString()}`);
+	};
+
+	const tick = () => {
+		if (running) return;
+		const verdict = decide(Date.now(), due.getTime());
+		if (verdict === 'wait') return;
+		if (verdict === 'replan') return plan();
+		if (verdict === 'skip') {
+			console.log(`[nightly] missed ${due.toString()} by hours — skipping to the next one`);
+			return plan();
+		}
+		running = true;
+		void runOnce().finally(() => {
+			running = false;
+			plan();
+		});
 	};
 
 	const runOnce = async () => {
@@ -97,10 +111,9 @@ export function startNightly(getDb: () => Database.Database): void {
 			}
 		} catch (e) {
 			console.error('[nightly] run failed', e);
-		} finally {
-			schedule();
 		}
 	};
 
-	schedule();
+	console.log(`[nightly] next run ${due.toString()}`);
+	setInterval(tick, TICK_MS).unref();
 }
