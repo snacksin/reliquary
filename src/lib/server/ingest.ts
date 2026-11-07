@@ -23,7 +23,13 @@ import {
 } from './epub';
 import { computeContentHash, countWords, hashChapterContent } from './identity';
 import { syncWorkSeries } from './series';
-import { extractWorkAuthors, syncWorkAuthors } from './authors';
+import {
+	extractWorkAuthors,
+	linkedWorkAuthors,
+	parseFichubByline,
+	refreshAuthorLinks,
+	syncWorkAuthors
+} from './authors';
 import { sanitizeAndScopeSkin, stripCalibreBoilerplate } from './skin';
 
 /**
@@ -224,6 +230,19 @@ function findMatch(
  * client-safe message + a `code` discriminator.
  */
 export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<IngestResult> {
+	const result = await ingestEpubOnce(buffer, sourceLabel);
+	// Author links: a new AO3 fic can be the account an existing FicHub
+	// name auto-matches (and a new FicHub fic may need its derived rows).
+	// A convenience only — never fails an upload that already succeeded.
+	try {
+		refreshAuthorLinks(getDb());
+	} catch (e) {
+		console.error('[author-links] refresh after ingest failed', e);
+	}
+	return result;
+}
+
+async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<IngestResult> {
 	const parseId = randomUUID();
 
 	let parsed: ParsedEpub;
@@ -279,8 +298,8 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// Author Identity Part A: byline authors from the rel="author" LINKS
 	// (account + pseud straight from the /users/… URL — never the display
 	// string). The byline anchor lives in the SUMMARY wrapper in AO3 EPUBs,
-	// so both wrappers are scanned. AO3-source only; other sources get no
-	// rows and every author surface falls back to works.author unchanged.
+	// so both wrappers are scanned. Other sources: see the author-links
+	// block below (unlinked → no rows → works.author fallback, as before).
 	// Deliberately NOT part of the content hash — computeContentHash inputs
 	// above are untouched (#64 hash-from-raw stays byte-identical).
 	// WS Part 2: sanitize + #workskin-scope the creator CSS once, up front —
@@ -290,13 +309,19 @@ export async function ingestEpub(buffer: Buffer, sourceLabel: string): Promise<I
 	// doesn't come in wearing a font override and stretched images.
 	const skinCss = stripCalibreBoilerplate(sanitizeAndScopeSkin(parsed.skinCss));
 
+	const db = getDb();
+
+	// Author links (2026-11-07): a FicHub export of an AO3 fic carries the
+	// byline as plain "pseud (account)" text → parsed rows; any other site's
+	// name gets rows only if author_links joins it to an account (keyed by
+	// the decoded display name, which is what works.author stores).
 	const summaryChapter = parsed.chapters.find((c) => c.kind === 'summary');
 	const workAuthors =
 		source === 'ao3'
 			? extractWorkAuthors((summaryChapter?.html ?? '') + (prefaceChapter?.html ?? ''))
-			: [];
-
-	const db = getDb();
+			: source === 'fichub-ao3'
+				? parseFichubByline(prefaceChapter?.html ?? '')
+				: linkedWorkAuthors(db, displayAuthor);
 	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount);
 
 	const restoreIfTrashed = db.prepare(
