@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
-import { authorKeyExists } from '$lib/server/authors';
+import { authorKeyExists, isLinkableName, linkedAliases } from '$lib/server/authors';
 
 /**
  * Author note (Author Pages Part 2) + pseud list (Author Identity Part A).
@@ -40,7 +40,18 @@ export const GET: RequestHandler = ({ params }) => {
 			  ORDER BY count DESC, pseud COLLATE NOCASE ASC`
 		)
 		.all(params.name) as { pseud: string; count: number }[];
-	return json({ name: params.name, notes: row?.notes ?? null, pseuds });
+	// Author links: other-site names joined onto this author ("Also here
+	// as"), and whether THIS page is a FicHub-only name that can be joined
+	// onto someone ("Same author as…") — never an account page.
+	const aliases = linkedAliases(db, params.name);
+	const canLink = isLinkableName(db, params.name);
+	return json({
+		name: params.name,
+		notes: row?.notes ?? null,
+		pseuds,
+		linked_aliases: aliases,
+		can_link: canLink
+	});
 };
 
 /**

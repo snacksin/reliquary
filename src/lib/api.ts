@@ -737,11 +737,64 @@ export type AuthorPseud = { pseud: string; count: number };
 export async function getAuthorDetail(
 	name: string,
 	fetch: Fetch
-): Promise<{ notes: string | null; pseuds: AuthorPseud[] }> {
+): Promise<{
+	notes: string | null;
+	pseuds: AuthorPseud[];
+	linkedAliases: LinkedAlias[];
+	canLink: boolean;
+}> {
 	const res = await fetch(`/api/authors/${encodeURIComponent(name)}`);
 	if (!res.ok) throw new Error(await extractError(res));
-	const body = (await res.json()) as { notes: string | null; pseuds: AuthorPseud[] };
-	return { notes: body.notes, pseuds: body.pseuds ?? [] };
+	const body = (await res.json()) as {
+		notes: string | null;
+		pseuds: AuthorPseud[];
+		linked_aliases?: LinkedAlias[];
+		can_link?: boolean;
+	};
+	return {
+		notes: body.notes,
+		pseuds: body.pseuds ?? [],
+		linkedAliases: body.linked_aliases ?? [],
+		canLink: body.can_link ?? false
+	};
+}
+
+// ─── Author links: one writer, two bylines (2026-11-07) ─────────────
+
+/** A name from another site joined onto this author ("Also here as"). */
+export type LinkedAlias = {
+	alias: string;
+	kind: 'auto' | 'manual';
+	/** works.source of its fics: fichub-ffn | fichub-other | unknown | … */
+	source: string | null;
+	works: number;
+};
+
+/** Human label for where a linked name's fics came from. */
+export function aliasSiteLabel(source: string | null): string {
+	if (source === 'fichub-ffn') return 'FanFiction.net';
+	if (source === 'fichub-other') return 'FicHub';
+	return 'another site';
+}
+
+/** Join this (FicHub-only) author onto `target`. */
+export async function linkAuthorTo(name: string, target: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/link`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ target })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+/** Undo a link: `alias` leaves this author and gets its own page again. */
+export async function unlinkAlias(name: string, alias: string, fetch: Fetch): Promise<void> {
+	const res = await fetch(`/api/authors/${encodeURIComponent(name)}/link`, {
+		method: 'DELETE',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ alias })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
 }
 
 /** Save (or clear, with an empty string) the author's note. */

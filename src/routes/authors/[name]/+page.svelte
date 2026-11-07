@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page as pageState } from '$app/state';
-	import { favoriteAuthor, unfavoriteAuthor } from '$lib/api';
+	import {
+		aliasSiteLabel,
+		favoriteAuthor,
+		linkAuthorTo,
+		unfavoriteAuthor,
+		unlinkAlias
+	} from '$lib/api';
 	import AuthorNotesTags from '$lib/AuthorNotesTags.svelte';
 	import FilterSidebar from '$lib/FilterSidebar.svelte';
 	import Pagination from '$lib/Pagination.svelte';
@@ -60,6 +66,46 @@
 			favError = e instanceof Error ? e.message : 'Favorite toggle failed';
 		} finally {
 			pendingFav = null;
+		}
+	}
+
+	// Author links (2026-11-07): one writer under two bylines. On an account
+	// page, "Also here as" lists other-site names joined onto it (Unlink sends
+	// one back to its own page); on a FicHub-only page, "Same author as…"
+	// joins it onto another author and moves there, since this page stops
+	// existing once its works belong to the target.
+	let linkTarget = $state('');
+	let linkBusy = $state(false);
+	let linkError = $state<string | null>(null);
+	const linkTargetValid = $derived(data.linkCandidates.includes(linkTarget.trim()));
+
+	async function doLink() {
+		const target = linkTarget.trim();
+		if (!linkTargetValid || linkBusy) return;
+		linkBusy = true;
+		linkError = null;
+		try {
+			await linkAuthorTo(author.name, target, fetch);
+			await goto(`/authors/${encodeURIComponent(target)}`, { invalidateAll: true });
+		} catch (e) {
+			linkError = e instanceof Error ? e.message : 'Link failed';
+		} finally {
+			linkBusy = false;
+		}
+	}
+
+	async function doUnlink(alias: string) {
+		if (linkBusy) return;
+		if (!confirm(`Unlink "${alias}"? Its fics go back to their own author page.`)) return;
+		linkBusy = true;
+		linkError = null;
+		try {
+			await unlinkAlias(author.name, alias, fetch);
+			await invalidateAll();
+		} catch (e) {
+			linkError = e instanceof Error ? e.message : 'Unlink failed';
+		} finally {
+			linkBusy = false;
 		}
 	}
 
@@ -145,6 +191,62 @@
 						{/each}
 					</div>
 				</section>
+			{/if}
+			{#if data.linkedAliases.length > 0}
+				<section class="pseud-block" aria-label="Same author on other sites">
+					<p class="pseud-block-label">Also here as</p>
+					<ul class="alias-list">
+						{#each data.linkedAliases as a (a.alias)}
+							<li>
+								<span class="alias-name">{a.alias}</span>
+								<span class="alias-meta">
+									{aliasSiteLabel(a.source)} · {a.works} fic{a.works === 1 ? '' : 's'}{a.kind ===
+									'auto'
+										? ' · matched by name'
+										: ''}
+								</span>
+								<button
+									type="button"
+									class="alias-unlink"
+									disabled={linkBusy}
+									onclick={() => doUnlink(a.alias)}>Unlink</button
+								>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+			{#if data.canLink}
+				<section class="pseud-block" aria-label="Link to the same author">
+					<p class="pseud-block-label">Same author as…</p>
+					<form
+						class="link-form"
+						onsubmit={(e) => {
+							e.preventDefault();
+							doLink();
+						}}
+					>
+						<input
+							type="text"
+							list="link-candidates"
+							placeholder="Pick an author"
+							aria-label="Author this is the same person as"
+							bind:value={linkTarget}
+						/>
+						<datalist id="link-candidates">
+							{#each data.linkCandidates as n (n)}
+								<option value={n}></option>
+							{/each}
+						</datalist>
+						<button type="submit" class="pseud-pill" disabled={!linkTargetValid || linkBusy}
+							>Link</button
+						>
+					</form>
+					<p class="link-hint">Moves these fics onto that author's page. You can unlink later.</p>
+				</section>
+			{/if}
+			{#if linkError}
+				<p class="error">{linkError}</p>
 			{/if}
 			{#key author.name}
 				<AuthorNotesTags
@@ -271,6 +373,67 @@
 	.pseud-pill.base.active {
 		border-style: solid;
 		color: var(--reader-bg);
+	}
+	/* Author links: "Also here as" rows + the "Same author as…" picker,
+	   in the pseud block's label rhythm. */
+	.alias-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.alias-list li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 8px;
+		font-size: 0.85rem;
+	}
+	.alias-name {
+		font-weight: 600;
+	}
+	.alias-meta {
+		color: var(--reader-muted);
+		font-size: 0.75rem;
+	}
+	.alias-unlink {
+		font: inherit;
+		font-size: 0.75rem;
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--reader-muted);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	.alias-unlink:hover {
+		color: var(--reader-fg);
+	}
+	.link-form {
+		display: flex;
+		gap: 6px;
+	}
+	.link-form input {
+		flex: 1;
+		min-width: 0;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 3px 8px;
+		border: 1px solid var(--reader-border);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--reader-fg);
+	}
+	.link-form button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.link-hint {
+		font-size: 0.72rem;
+		color: var(--reader-muted);
+		margin: 0.35rem 0 0;
 	}
 	.back {
 		margin: 0 0 0.75rem;

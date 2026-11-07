@@ -113,6 +113,11 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 		// Author Identity Part A: "pseuds seen so far" with live-work counts —
 		// drives the pseud sub-filter pills (shown only when ≥2 labels).
 		pseuds: detail.pseuds,
+		// Author links: names from other sites joined onto this author, and
+		// for a FicHub-only name the "Same author as…" picker's candidates.
+		linkedAliases: detail.linkedAliases,
+		canLink: detail.canLink,
+		linkCandidates: detail.canLink ? authors.map((a) => a.name).filter((n) => n !== author) : [],
 		authorTags,
 		tagVocab
 	};
