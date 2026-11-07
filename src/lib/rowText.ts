@@ -8,23 +8,105 @@
  * tidying, not a security boundary.
  */
 
+// The basics plus the typographic set. AO3 summaries are mostly literal
+// characters, but FicHub writes curly quotes, dashes and accents as named
+// entities (&rsquo; &ldquo; &hellip; …), which showed raw in list rows
+// (2026-11-07, "Dārio Idaña"). Unknown names are left as written.
 const NAMED_ENTITIES: Record<string, string> = {
 	amp: '&',
 	lt: '<',
 	gt: '>',
 	quot: '"',
-	'#39': "'",
 	apos: "'",
-	nbsp: ' '
+	nbsp: ' ',
+	lsquo: '‘',
+	rsquo: '’',
+	sbquo: '‚',
+	ldquo: '“',
+	rdquo: '”',
+	bdquo: '„',
+	laquo: '«',
+	raquo: '»',
+	lsaquo: '‹',
+	rsaquo: '›',
+	ndash: '–',
+	mdash: '—',
+	hellip: '…',
+	bull: '•',
+	middot: '·',
+	prime: '′',
+	Prime: '″',
+	dagger: '†',
+	Dagger: '‡',
+	deg: '°',
+	copy: '©',
+	reg: '®',
+	trade: '™',
+	sect: '§',
+	para: '¶',
+	times: '×',
+	divide: '÷',
+	frac12: '½',
+	frac14: '¼',
+	frac34: '¾',
+	hearts: '♥',
+	iexcl: '¡',
+	iquest: '¿',
+	shy: '',
+	zwj: '‍',
+	zwnj: '‌',
+	ensp: ' ',
+	emsp: ' ',
+	thinsp: ' ',
+	aacute: 'á',
+	Aacute: 'Á',
+	agrave: 'à',
+	acirc: 'â',
+	auml: 'ä',
+	atilde: 'ã',
+	aring: 'å',
+	aelig: 'æ',
+	ccedil: 'ç',
+	eacute: 'é',
+	Eacute: 'É',
+	egrave: 'è',
+	ecirc: 'ê',
+	euml: 'ë',
+	iacute: 'í',
+	igrave: 'ì',
+	icirc: 'î',
+	iuml: 'ï',
+	ntilde: 'ñ',
+	Ntilde: 'Ñ',
+	oacute: 'ó',
+	ograve: 'ò',
+	ocirc: 'ô',
+	ouml: 'ö',
+	otilde: 'õ',
+	oslash: 'ø',
+	szlig: 'ß',
+	uacute: 'ú',
+	ugrave: 'ù',
+	ucirc: 'û',
+	uuml: 'ü',
+	yacute: 'ý',
+	yuml: 'ÿ'
 };
 
+function codePoint(n: number, raw: string): string {
+	return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
+}
+
+// One pass, so "&amp;rsquo;" decodes once to the literal text "&rsquo;"
+// (the escaped form the author wrote) instead of on to ’.
 function decodeEntities(s: string): string {
-	return s
-		.replace(/&#(\d+);/g, (_, d) => {
-			const n = Number(d);
-			return Number.isFinite(n) ? String.fromCodePoint(n) : _;
-		})
-		.replace(/&(amp|lt|gt|quot|#39|apos|nbsp);/g, (_, name) => NAMED_ENTITIES[name] ?? _);
+	return s.replace(/&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/gi, (raw, body: string) => {
+		if (body[0] === '#') {
+			const hex = body[1] === 'x' || body[1] === 'X';
+			return codePoint(parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10), raw);
+		}
+		return NAMED_ENTITIES[body] ?? raw;
+	});
 }
 
 function collapse(s: string): string {
