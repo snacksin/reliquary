@@ -201,6 +201,37 @@ export function linkedWorkAuthors(db: Database, rawAuthor: string): WorkAuthor[]
 }
 
 /**
+ * Every author key an INCOMING fic could belong to, for cross-site twin
+ * matching (ingest's findMatch). Parsed/linked accounts when there are
+ * any; otherwise the raw name plus the AO3 account the auto pass WOULD
+ * link it to — a brand-new FanFiction.net name has no link row yet at
+ * upload time (refreshAuthorLinks runs after the ingest). A blocked name
+ * stays itself: Allie said it's not that author.
+ */
+export function incomingAuthorKeys(
+	db: Database,
+	rawAuthor: string,
+	workAuthors: WorkAuthor[]
+): string[] {
+	if (workAuthors.length > 0) return [...new Set(workAuthors.map((a) => a.account))];
+	const link = db
+		.prepare(`SELECT account, kind FROM author_links WHERE alias = ?`)
+		.get(rawAuthor) as { account: string; kind: string } | undefined;
+	if (link) return link.kind === 'blocked' ? [rawAuthor] : [link.account];
+	const want = normalizeAuthorName(rawAuthor);
+	const matches = (
+		db
+			.prepare(
+				`SELECT DISTINCT wa.account FROM work_authors wa
+				   JOIN works w ON w.id = wa.work_id
+				  WHERE w.source IN ${PARSED_SOURCES}`
+			)
+			.all() as { account: string }[]
+	).filter((a) => normalizeAuthorName(a.account) === want);
+	return matches.length === 1 ? [rawAuthor, matches[0].account] : [rawAuthor];
+}
+
+/**
  * Move an author key's favorite / note / author-tags onto another key,
  * COALESCE-merging into an existing row (the target's own values win).
  * Plain statements — callers run it inside their transaction.

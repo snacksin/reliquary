@@ -25,6 +25,7 @@ import { computeContentHash, countWords, hashChapterContent } from './identity';
 import { syncWorkSeries } from './series';
 import {
 	extractWorkAuthors,
+	incomingAuthorKeys,
 	linkedWorkAuthors,
 	parseFichubByline,
 	refreshAuthorLinks,
@@ -174,12 +175,88 @@ type MatchRow = {
 	trashed_at: string | null;
 };
 
+/** Which site a canonical source URL (normalizeSourceUrl) belongs to. */
+function siteOf(url: string | null): 'ao3' | 'ffn' | null {
+	if (!url) return null;
+	if (/archiveofourown\.org\/works\//i.test(url)) return 'ao3';
+	if (/fanfiction\.net\/s\//i.test(url)) return 'ffn';
+	return null;
+}
+
+/**
+ * Title comparison key for cross-site twins: lowercase, curly quotes and
+ * dashes folded, everything but letters/digits dropped ("Rhaegar's Odes"
+ * vs "Rhaegar’s  Odes!" match). Unicode letters are kept (accents count).
+ */
+export function normalizeTitle(s: string): string {
+	return s
+		.normalize('NFKC')
+		.toLowerCase()
+		.replace(/[‘’‛′]/g, "'")
+		.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * Twin identity of an incoming fic: the same story the author cross-posted
+ * to another site (AO3 ↔ FanFiction.net), which has an unrelated source URL.
+ */
+type TwinKey = { site: 'ao3' | 'ffn'; titleKey: string; authorKeys: string[] };
+
+/**
+ * Cross-site twin lookup (2026-11-07, Allie: "one fic, newest wins").
+ * Only reached when the incoming fic's source URL matched nothing. A twin is
+ * an existing work on a DIFFERENT known site with the same title key and an
+ * overlapping author key (parsed/linked account, else the raw byline — so
+ * author links decide "same author"). Exactly one candidate or nothing:
+ * several means we can't tell which, and a same-site look-alike is never a
+ * twin (two AO3 works can share a title).
+ *
+ * Decision differs from the same-URL table on equal counts: across sites a
+ * different file with the same number of chapters is the same fic, not an
+ * edit, so it's a duplicate (no churn between differently formatted copies).
+ */
+function findTwin(
+	db: ReturnType<typeof getDb>,
+	twin: TwinKey,
+	incomingChapters: number
+): { kind: 'duplicate' | 'update' | 'stale'; row: MatchRow; twin: true } | null {
+	if (twin.authorKeys.length === 0 || !twin.titleKey) return null;
+	const keys = twin.authorKeys;
+	const marks = keys.map(() => '?').join(', ');
+	const rows = db
+		.prepare(
+			`SELECT DISTINCT w.id, w.title, w.chapter_count, w.content_hash, w.trashed_at,
+			        w.source_url AS source_url
+			   FROM works w
+			  WHERE w.source_url IS NOT NULL
+			    AND (EXISTS (SELECT 1 FROM work_authors wa
+			                  WHERE wa.work_id = w.id AND wa.account IN (${marks}))
+			         OR (w.author IN (${marks})
+			             AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = w.id)))`
+		)
+		.all(...keys, ...keys) as (MatchRow & { source_url: string })[];
+	const twins = rows.filter((r) => {
+		const site = siteOf(r.source_url);
+		return site !== null && site !== twin.site && normalizeTitle(r.title) === twin.titleKey;
+	});
+	if (twins.length !== 1) return null;
+	const row = twins[0];
+	const kind =
+		incomingChapters > row.chapter_count
+			? 'update'
+			: incomingChapters < row.chapter_count
+				? 'stale'
+				: 'duplicate';
+	return { kind, row, twin: true };
+}
+
 function findMatch(
 	db: ReturnType<typeof getDb>,
 	sourceUrl: string | null,
 	contentHash: string,
-	incomingChapters: number
-): { kind: 'duplicate' | 'update' | 'stale'; row: MatchRow } | null {
+	incomingChapters: number,
+	twin: TwinKey | null
+): { kind: 'duplicate' | 'update' | 'stale'; row: MatchRow; twin?: true } | null {
 	if (sourceUrl) {
 		const candidates = db
 			.prepare(
@@ -188,7 +265,7 @@ function findMatch(
 				 ORDER BY chapter_count DESC, ingested_at DESC`
 			)
 			.all(sourceUrl) as MatchRow[];
-		if (candidates.length === 0) return null;
+		if (candidates.length === 0) return twin ? findTwin(db, twin, incomingChapters) : null;
 		const exact = candidates.find((c) => c.content_hash === contentHash);
 		if (exact) return { kind: 'duplicate', row: exact };
 		const richest = candidates[0];
@@ -322,7 +399,25 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 			: source === 'fichub-ao3'
 				? parseFichubByline(prefaceChapter?.html ?? '')
 				: linkedWorkAuthors(db, displayAuthor);
-	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount);
+	// Cross-site twins (2026-11-07): the same story cross-posted to AO3 and
+	// FanFiction.net. Only consulted when the source URL matches nothing.
+	const incomingSite = siteOf(sourceUrl);
+	const twinKey: TwinKey | null = incomingSite
+		? {
+				site: incomingSite,
+				titleKey: normalizeTitle(displayTitle),
+				authorKeys: incomingAuthorKeys(db, displayAuthor, workAuthors)
+			}
+		: null;
+	const match = findMatch(db, sourceUrl, contentHash, parsed.chapterCount, twinKey);
+	// A twin update from a non-AO3 copy brings newer CHAPTERS only: the
+	// AO3 work keeps its title/author/summary, source + source_url, tags,
+	// series, author rows, cover, skin and its preface/summary/end-notes
+	// pages (FanFiction.net has none of that richness). An AO3 copy
+	// arriving ahead of a non-AO3 one is a normal full update instead, plus
+	// the AO3 source_url so later AO3 downloads match by URL.
+	const twinUpdate = match?.twin === true && match.kind === 'update';
+	const keepIdentity = twinUpdate && incomingSite !== 'ao3';
 
 	const restoreIfTrashed = db.prepare(
 		`UPDATE works SET trashed_at = NULL WHERE id = ? AND trashed_at IS NOT NULL`
@@ -366,7 +461,11 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 		const finalId = match.row.id;
 		const finalDir = join('data', 'works', finalId);
 		const stagingDir = join('data', 'works', `.staging-${parseId}`);
-		const chapters = remapImageSrcs(parsed.chapters, parseId, finalId);
+		// keepIdentity (cross-site twin from a non-AO3 copy): only the REAL
+		// chapters come from the incoming EPUB; the work's own preface /
+		// summary / end-notes pages stay (carried into staging below).
+		const remapped = remapImageSrcs(parsed.chapters, parseId, finalId);
+		const chapters = keepIdentity ? remapped.filter((c) => c.kind === 'chapter') : remapped;
 
 		// Existing chapter rows, keyed by number. Update-in-place reconciles
 		// against these (preserving real-chapter ids) rather than
@@ -383,6 +482,10 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 			.all(finalId) as ExistingChapter[];
 		const existingByNumber = new Map(existingChapters.map((c) => [c.number, c]));
 		const incomingNumbers = new Set(chapters.map((c) => c.number));
+		// Kept wrappers count as present, so the reconcile below doesn't
+		// delete their rows.
+		const keptWrappers = keepIdentity ? existingChapters.filter((c) => c.kind !== 'chapter') : [];
+		for (const w of keptWrappers) incomingNumbers.add(w.number);
 
 		// Chapter History (DESIGN §6.7b): for each EXISTING real chapter
 		// whose stored HTML differs from the incoming HTML, stage the OLD
@@ -408,11 +511,16 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 			.prepare(`SELECT cover_path, cover_source FROM works WHERE id = ?`)
 			.get(finalId) as { cover_path: string | null; cover_source: string | null } | undefined;
 		const keepManualCover = existingCover?.cover_source === 'manual';
+		// keepIdentity keeps ANY existing cover (an AO3 work's extracted one
+		// too): a FanFiction.net copy has no cover worth replacing it with.
+		const keepCover = keepManualCover || (keepIdentity && !!existingCover?.cover_path);
 
 		// Skin precedence (WS Part 3): same rule as covers — a PASTED
 		// ('manual') skin always survives a re-drop; extracted ('epub') skins
 		// keep tracking the incoming EPUB.
+		// keepIdentity keeps an extracted skin too (same reasoning as covers).
 		const keepManualSkin =
+			keepIdentity ||
 			(
 				db.prepare(`SELECT skin_source FROM works WHERE id = ?`).get(finalId) as {
 					skin_source: string | null;
@@ -454,6 +562,26 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 				if (coverFile && existsSync(src)) {
 					cpSync(src, join(stagingDir, coverFile));
 				}
+			} else if (keepCover && existingCover?.cover_path) {
+				// keepIdentity, extracted cover: it lives under images/, so keep
+				// its path relative to the work dir.
+				const prefix = finalDir + '/';
+				if (existingCover.cover_path.startsWith(prefix)) {
+					const rel = existingCover.cover_path.slice(prefix.length);
+					const src = join(finalDir, rel);
+					if (existsSync(src)) {
+						mkdirSync(join(stagingDir, rel, '..'), { recursive: true });
+						cpSync(src, join(stagingDir, rel));
+					}
+				}
+			}
+
+			// keepIdentity: the work's own wrapper pages ride the swap.
+			for (const w of keptWrappers) {
+				const prefix = finalDir + '/';
+				if (!w.content_path.startsWith(prefix)) continue;
+				const rel = w.content_path.slice(prefix.length);
+				if (existsSync(w.content_path)) cpSync(w.content_path, join(stagingDir, rel));
 			}
 
 			for (const inc of chapters) {
@@ -506,6 +634,16 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 			       chapters_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE chapters_updated_at END
 			 WHERE id = ?`
 		);
+		// keepIdentity: content-only refresh — the work's metadata stays.
+		const updateContent = db.prepare(
+			`UPDATE works
+			   SET chapter_count = ?, content_hash = ?, trashed_at = NULL,
+			       chapters_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE chapters_updated_at END
+			 WHERE id = ?`
+		);
+		// Twin update from an AO3 copy: AO3 becomes the work's identity, so
+		// later AO3 downloads match it by URL.
+		const setSourceUrl = db.prepare(`UPDATE works SET source_url = ? WHERE id = ?`);
 		// Cover columns are deliberately NOT in updateWork: they follow the
 		// precedence rule (manual wins), not the metadata refresh.
 		const setCover = db.prepare(`UPDATE works SET cover_path = ?, cover_source = ? WHERE id = ?`);
@@ -545,16 +683,21 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 				// for a matched-in-trash WIP update. FK rows (reading_progress,
 				// favorited_at on works) are left untouched.
 				const chaptersGrew = parsed.chapterCount > match.row.chapter_count ? 1 : 0;
-				updateWork.run(
-					displayTitle,
-					displayAuthor,
-					parsed.summary,
-					parsed.chapterCount,
-					contentHash,
-					source,
-					chaptersGrew,
-					finalId
-				);
+				if (keepIdentity) {
+					updateContent.run(parsed.chapterCount, contentHash, chaptersGrew, finalId);
+				} else {
+					updateWork.run(
+						displayTitle,
+						displayAuthor,
+						parsed.summary,
+						parsed.chapterCount,
+						contentHash,
+						source,
+						chaptersGrew,
+						finalId
+					);
+					if (twinUpdate && sourceUrl) setSourceUrl.run(sourceUrl, finalId);
+				}
 
 				// Reconcile chapters by number: update existing rows in place
 				// (preserving their ids), insert genuinely-new numbers, archive
@@ -598,19 +741,23 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 				// survive — the delete is category-scoped). upsertTag keeps
 				// shared tags rows (and thus tag_aliases edges + hide flags)
 				// intact.
-				deleteWorkTags.run(finalId);
-				for (const tag of parsed.tags) {
-					const row = upsertTag.get(tag.category, tag.name);
-					if (row) linkWorkTag.run(finalId, row.id);
+				// keepIdentity skips all three: tags, series and byline rows
+				// stay the AO3 work's own.
+				if (!keepIdentity) {
+					deleteWorkTags.run(finalId);
+					for (const tag of parsed.tags) {
+						const row = upsertTag.get(tag.category, tag.name);
+						if (row) linkWorkTag.run(finalId, row.id);
+					}
+
+					// Series Pages Part 1: refresh this work's series links (and
+					// stamp series_scanned_at) from the re-parsed preface.
+					syncWorkSeries(db, finalId, seriesEntries);
+
+					// Author Identity Part A: refresh the byline author rows.
+					// work_authors is ingest-owned, so a full rewrite is safe.
+					syncWorkAuthors(db, finalId, workAuthors);
 				}
-
-				// Series Pages Part 1: refresh this work's series links (and
-				// stamp series_scanned_at) from the re-parsed preface.
-				syncWorkSeries(db, finalId, seriesEntries);
-
-				// Author Identity Part A: refresh the byline author rows.
-				// work_authors is ingest-owned, so a full rewrite is safe.
-				syncWorkAuthors(db, finalId, workAuthors);
 
 				// WS Part 2/3: an EXTRACTED skin tracks the incoming EPUB
 				// (present → set, absent → clear); a pasted skin is untouchable
@@ -628,7 +775,7 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 				// manual covers are untouchable (file already carried into
 				// staging above). A coverless re-drop CLEARS a prior extracted
 				// cover — its file is gone post-swap either way.
-				if (!keepManualCover) {
+				if (!keepCover) {
 					const newCoverPath = parsed.coverFilename
 						? join(finalDir, 'images', parsed.coverFilename)
 						: null;
