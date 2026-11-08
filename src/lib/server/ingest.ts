@@ -31,7 +31,7 @@ import {
 	refreshAuthorLinks,
 	syncWorkAuthors
 } from './authors';
-import { sanitizeAndScopeSkin, stripCalibreBoilerplate } from './skin';
+import { isFichubSource, sanitizeAndScopeSkin, stripCalibreBoilerplate } from './skin';
 
 /**
  * Disk filename for a parsed chapter. Real chapters use `ch-N.html`
@@ -384,7 +384,14 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 	// no CSS or nothing survives the scrub. Not a hash input. Calibre's own
 	// flattened stylesheet is NOT a skin — strip it (skin.ts) so a plain fic
 	// doesn't come in wearing a font override and stretched images.
-	const skinCss = stripCalibreBoilerplate(sanitizeAndScopeSkin(parsed.skinCss));
+	// FicHub's stylesheets aren't a skin either (2026-11-08): FicHub builds
+	// its own EPUB, so its CSS is never the author's. Its main.css forces
+	// Verdana, and its unlinked nav.css says `BODY {color: white;}`, which
+	// turned whole fics white. A FicHub export carries no skin at all
+	// (a pasted one is still allowed later; that's 'manual').
+	const skinCss = isFichubSource(source)
+		? null
+		: stripCalibreBoilerplate(sanitizeAndScopeSkin(parsed.skinCss));
 
 	const db = getDb();
 

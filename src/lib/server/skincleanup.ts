@@ -3,6 +3,44 @@ import type { Database } from 'better-sqlite3';
 import { stripCalibreBoilerplate } from './skin';
 
 /**
+ * One-shot (idempotent) boot backfill, 2026-11-08: clear the skins that
+ * were auto-extracted from FicHub exports before ingest learned to skip
+ * them (isFichubSource in skin.ts). They were FicHub's own stylesheet,
+ * never the author's, and its `color: white` line turned whole fics white.
+ *
+ * Scope: `source LIKE 'fichub-%' AND skin_source = 'epub'`. Pasted
+ * ('manual') skins are the user's and are never touched. A second boot
+ * matches no rows. Delete the file, null both columns: the work is back
+ * to skin-less, exactly as a fresh FicHub upload now arrives.
+ *
+ * CR-invisible: works.skin_path / skin_source and files only.
+ */
+export function backfillClearFichubSkins(db: Database): void {
+	const rows = db
+		.prepare(
+			`SELECT id, skin_path FROM works
+			 WHERE source LIKE 'fichub-%' AND skin_source = 'epub' AND skin_path IS NOT NULL`
+		)
+		.all() as { id: string; skin_path: string }[];
+	const clear = db.prepare(`UPDATE works SET skin_path = NULL, skin_source = NULL WHERE id = ?`);
+	let cleared = 0;
+	for (const r of rows) {
+		try {
+			try {
+				unlinkSync(r.skin_path);
+			} catch {
+				/* already gone — fine */
+			}
+			clear.run(r.id);
+			cleared += 1;
+		} catch (e) {
+			console.error(`[fichub-skin-cleanup] skip ${r.id}:`, e instanceof Error ? e.message : e);
+		}
+	}
+	if (cleared > 0) console.log(`[fichub-skin-cleanup] ${cleared} FicHub stylesheets removed`);
+}
+
+/**
  * One-shot (idempotent) boot backfill: strip Calibre boilerplate from the
  * skins WS Part 2 auto-extracted before the filter existed (2026-09-15).
  * Companion to `stripCalibreBoilerplate` at ingest (ingest.ts), same idiom

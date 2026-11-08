@@ -228,6 +228,16 @@ const CALIBRE_BOILERPLATE_RULE =
 const CALIBRE_HR_BODY =
 	'{ color: gray; display: block; height: 2px; margin: 0.5em auto; border: currentColor inset 1px }';
 
+/**
+ * FicHub exports (any `fichub-*` source) never carry an author skin: FicHub
+ * builds the EPUB itself, so its stylesheets (main.css: a Verdana override;
+ * nav.css: `BODY {color: white;}`) are FicHub's, not the creator's. Ingest
+ * skips extraction for them; skincleanup.ts clears ones stored before.
+ */
+export function isFichubSource(source: string | null | undefined): boolean {
+	return !!source && source.startsWith('fichub-');
+}
+
 export function stripCalibreBoilerplate(css: string | null): string | null {
 	if (!css) return null;
 	// The class-name filter needs the `.calibre` marker (those names are only

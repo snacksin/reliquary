@@ -8,7 +8,7 @@ import { backfillSeries } from './series';
 import { backfillSource, backfillSourceUrl } from './source';
 import { backfillDecodeText, backfillFixHeadings } from './textdecode';
 import { backfillAuthorIdentity } from './authors';
-import { backfillStripCalibreSkins } from './skincleanup';
+import { backfillClearFichubSkins, backfillStripCalibreSkins } from './skincleanup';
 
 let cached: Database.Database | undefined;
 
@@ -143,6 +143,13 @@ export function getDb(): Database.Database {
 		backfillStripCalibreSkins(db);
 	} catch (e) {
 		console.error('[skin-cleanup] failed', e);
+	}
+	// FicHub skin cleanup (2026-11-08): FicHub's own stylesheet was stored as
+	// a skin and turned fics white. Same guard and footprint as above.
+	try {
+		backfillClearFichubSkins(db);
+	} catch (e) {
+		console.error('[fichub-skin-cleanup] failed', e);
 	}
 
 	// M2.3 Step 6: one-shot boot-time auto-purge of works trashed more
