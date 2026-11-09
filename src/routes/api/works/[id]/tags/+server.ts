@@ -71,7 +71,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			row = { id: Number(info.lastInsertRowid), name };
 		}
 		db.prepare(
-			`INSERT INTO work_tags (work_id, tag_id) VALUES (?, ?)
+			`INSERT INTO work_tags (work_id, tag_id, source) VALUES (?, ?, 'manual')
 			 ON CONFLICT(work_id, tag_id) DO NOTHING`
 		).run(params.id, row.id);
 		return row;
