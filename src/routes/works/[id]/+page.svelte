@@ -23,6 +23,7 @@
 	import NotesEditor from '$lib/NotesEditor.svelte';
 	import SkinEditor from '$lib/SkinEditor.svelte';
 	import WorkPersonalTags from '$lib/WorkPersonalTags.svelte';
+	import WorkManualTags from '$lib/WorkManualTags.svelte';
 	import { Heart, Star } from 'lucide-svelte';
 	import type { PageProps } from './$types';
 
@@ -617,6 +618,20 @@
 	{#key data.work.id}
 		<NotesEditor workId={data.work.id} note={data.work.note ?? null} />
 	{/key}
+
+	<!-- Manual tags (2026-11-09) — hand-added AO3-category tags for works
+	     whose EPUB carries none (FicHub / unknown sources). Adding is for
+	     non-AO3 works only (Allie's call); on an AO3 work the block appears
+	     only to let leftover manual tags be removed. Read-only while trashed. -->
+	{#if data.work.source !== 'ao3' || (data.work.manual_tags ?? []).length > 0}
+		{#key data.work.id}
+			<WorkManualTags
+				workId={data.work.id}
+				tags={data.work.manual_tags ?? []}
+				canAdd={data.work.source !== 'ao3' && !isTrashed}
+			/>
+		{/key}
+	{/if}
 
 	<!-- Personal tags (you-layer Private tags) — "My tags" chips + add
 	     combobox, between Notes and the Tags & metadata link. Keyed like the

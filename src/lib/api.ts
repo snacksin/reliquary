@@ -391,6 +391,8 @@ export type WorkDetail = Work & {
 		 *  (≥1 archived version). Drives the "author edited · date" pill. */
 		last_edited_at: string | null;
 	}[];
+	/** Manual tags (2026-11-09): hand-added AO3-category tags, detail feed only. */
+	manual_tags?: ManualTag[];
 };
 
 export async function getWork(id: string, fetch: Fetch): Promise<WorkDetail> {
@@ -882,6 +884,54 @@ export async function removeWorkPersonalTag(
 	fetch: Fetch
 ): Promise<void> {
 	const res = await fetch(`/api/works/${workId}/tags`, {
+		method: 'DELETE',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ id: tagId })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+}
+
+// ─── Manual tags (non-AO3 works, 2026-11-09) ─────────────────────────
+
+/** A hand-added AO3-category tag on a work (work_tags.source = 'manual'). */
+export type ManualTag = { id: number; category: TagCategory; name: string };
+
+/** One category's vocabulary entry plus its live-work count. */
+export type TagVocabItem = { id: number; name: string; count: number };
+
+/** One AO3 category's whole vocabulary (hidden tags included), count DESC. */
+export async function getTagVocab(category: TagCategory, fetch: Fetch): Promise<TagVocabItem[]> {
+	const res = await fetch(`/api/tag-vocab?category=${encodeURIComponent(category)}`);
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/**
+ * Add a tag to a non-AO3 work by hand. The server find-or-creates it
+ * (case-insensitively; rating/warning/category must already exist).
+ */
+export async function addWorkManualTag(
+	workId: string,
+	category: TagCategory,
+	name: string,
+	fetch: Fetch
+): Promise<ManualTag> {
+	const res = await fetch(`/api/works/${workId}/manual-tags`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ category, name })
+	});
+	if (!res.ok) throw new Error(await extractError(res));
+	return res.json();
+}
+
+/** Remove a hand-added tag from a work (a parsed tag is never touched). */
+export async function removeWorkManualTag(
+	workId: string,
+	tagId: number,
+	fetch: Fetch
+): Promise<void> {
+	const res = await fetch(`/api/works/${workId}/manual-tags`, {
 		method: 'DELETE',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ id: tagId })

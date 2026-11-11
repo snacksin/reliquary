@@ -461,6 +461,8 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 		 ON CONFLICT(category, name) DO UPDATE SET name = excluded.name
 		 RETURNING id`
 	);
+	// source defaults to 'extracted' (migration 0031). OR IGNORE: a link the
+	// user already added by hand keeps source = 'manual'.
 	const linkWorkTag = db.prepare(`INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)`);
 
 	// ── Update-in-place: the WIP-got-new-chapters / edited-chapter path. ──
@@ -672,15 +674,18 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 		const stampEdited = db.prepare(
 			`UPDATE chapters SET last_edited_at = CURRENT_TIMESTAMP WHERE id = ?`
 		);
-		// Personal tags (you-layer) live in the SAME work_tags table under
-		// category='personal', but are user-authored, never parsed from the
-		// EPUB — so the re-ingest rewrite must never touch them. Scoping the
-		// delete to non-personal links is what lets a WIP update / duplicate
-		// re-upload / restore-via-re-upload preserve your tags (same
-		// preserved-data class as favorites/ratings/notes).
+		// Only EPUB-parsed links are rewritten. Personal tags (you-layer) and
+		// hand-added tags (manual tags, migration 0031) live in the SAME
+		// work_tags table with source = 'manual' and are user-authored, so
+		// the re-ingest rewrite must never touch them — that is what lets a
+		// WIP update / duplicate re-upload / restore-via-re-upload keep your
+		// tags (same preserved-data class as favorites/ratings/notes). The
+		// personal-category guard predates the source column and stays as a
+		// second lock.
 		const deleteWorkTags = db.prepare(
 			`DELETE FROM work_tags
 			  WHERE work_id = ?
+			    AND source = 'extracted'
 			    AND tag_id NOT IN (SELECT id FROM tags WHERE category = 'personal')`
 		);
 
@@ -744,8 +749,10 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 					if (!incomingNumbers.has(ex.number)) deleteChapter.run(ex.id);
 				}
 
-				// Rewrite ONLY this work's AO3-parsed work_tags (personal links
-				// survive — the delete is category-scoped). upsertTag keeps
+				// Rewrite ONLY this work's AO3-parsed work_tags (personal and
+				// manual links survive — the delete is source-scoped, and
+				// linkWorkTag's INSERT OR IGNORE leaves an existing manual link
+				// manual). upsertTag keeps
 				// shared tags rows (and thus tag_aliases edges + hide flags)
 				// intact.
 				// keepIdentity skips all three: tags, series and byline rows
