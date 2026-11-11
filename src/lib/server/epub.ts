@@ -789,6 +789,57 @@ async function chapterHtmlFromBook(book: EPub, id: string, styleSink?: string[])
 	return str;
 }
 
+/** Percent-decode an EPUB href for comparison; a malformed escape stays raw. */
+function decodeHref(href: string): string {
+	let s = href;
+	try {
+		s = decodeURIComponent(href);
+	} catch {
+		/* malformed %-escape → compare the raw string */
+	}
+	return posix.normalize(s);
+}
+
+/**
+ * Recover spine titles epub2 missed because of href ENCODING alone.
+ *
+ * epub2 joins NCX entries to spine items by exact href string. Calibre-built
+ * EPUBs whose page files have spaces (or other URL-unsafe characters) in
+ * their names list them raw in content.opf (`His Winter Queen_split_002.xhtml`)
+ * but %-encoded in toc.ncx (`His%20Winter%20Queen_split_002.xhtml`), so no
+ * spine item gets a title. With no titles, the position fallback and the
+ * untitled-continuation fold in parseEpub collapse the whole work into one
+ * giant chapter (a 39-chapter fic became one 2.8 MB chapter).
+ *
+ * Fill-only and strict, so every EPUB that already parses is byte-identical:
+ *   - only items where epub2 set NO title at all (`title === undefined`,
+ *     i.e. no NCX entry matched exactly) are touched;
+ *   - a match needs the WHOLE decoded, path-normalized href to be equal,
+ *     fragment included — an NCX entry like `ch.xhtml#anchor` still does not
+ *     title `ch.xhtml`, exactly as before;
+ *   - the last matching NCX entry wins, mirroring epub2 (its walk overwrites
+ *     the title on each later exact match).
+ * Returns new objects for filled items; epub2's manifest objects are not
+ * mutated. Chapter content is unaffected: it's read by manifest id.
+ */
+export function fillEncodedTocTitles<T extends { href?: string; title?: string }>(
+	flow: T[],
+	toc: { href?: string; title?: string }[]
+): T[] {
+	if (!flow.some((f) => f.title === undefined && f.href)) return flow;
+	const byDecoded = new Map<string, string>();
+	for (const t of toc) {
+		if (!t.href || typeof t.title !== 'string') continue;
+		byDecoded.set(decodeHref(t.href), t.title);
+	}
+	if (byDecoded.size === 0) return flow;
+	return flow.map((f) => {
+		if (f.title !== undefined || !f.href) return f;
+		const title = byDecoded.get(decodeHref(f.href));
+		return title === undefined ? f : { ...f, title };
+	});
+}
+
 export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedEpub> {
 	const tmpPath = join(tmpdir(), `reliquary-epub-${randomUUID()}.epub`);
 	await writeFile(tmpPath, buffer);
@@ -824,7 +875,12 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// Narrow view of each spine item that this module reads. epub2's
 		// TocElement isn't re-exported, so we type the fields we use directly.
 		type SpineItem = { id?: string; href?: string; title?: string };
-		const flow = book.flow as unknown as SpineItem[];
+		// Filled BEFORE pass 1 so title-based classification ("Preface",
+		// "Chapter N…", "Afterword") sees recovered titles too.
+		const flow = fillEncodedTocTitles(
+			book.flow as unknown as SpineItem[],
+			(book.toc ?? []) as unknown as { href?: string; title?: string }[]
+		);
 
 		// Pass 1: try filename + title for each spine item, leaving null where
 		// neither matched. We need pass 1 done before pass 2 because the
