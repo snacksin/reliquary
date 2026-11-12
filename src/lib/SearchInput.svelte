@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 
 	type Props = {
 		q: string;
@@ -21,17 +22,29 @@
 	// svelte-ignore state_referenced_locally
 	let value = $state(q);
 
-	$effect(() => {
-		// Sync from prop. The post-debounce URL update flows back through
-		// here too — by the time the effect runs, value already equals q
-		// (we set it before scheduling the update), so this is a no-op in
-		// the typing path. Only external changes (reload, clear from a
-		// parent) actually move `value`.
-		value = q;
-	});
-
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	const DEBOUNCE_MS = 300;
+
+	$effect(() => {
+		// Sync from prop — but only for changes that didn't come from this
+		// box. Our own debounced search lands here too, carrying the query
+		// as it was when the debounce fired (and trimmed). Writing that
+		// back into the box would erase whatever was typed while the load
+		// ran, plus any trailing space — the "fast typing drops letters
+		// and spaces" bug. So:
+		//   - typing still waiting on the debounce → the box is ahead of
+		//     the URL; leave it (its own push follows);
+		//   - URL already matches the box (ignoring the trim) → our own
+		//     search landing; nothing to do.
+		// What's left is a real outside change (back/forward, a link that
+		// sets or drops `q`), which the box follows.
+		const incoming = q;
+		untrack(() => {
+			if (timer !== null) return;
+			if (incoming === value.trim()) return;
+			value = incoming;
+		});
+	});
 
 	/**
 	 * Push the search state into the URL. Always drops the `page` param
