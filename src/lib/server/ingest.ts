@@ -214,6 +214,11 @@ type TwinKey = { site: 'ao3' | 'ffn'; titleKey: string; authorKeys: string[] };
  * Decision differs from the same-URL table on equal counts: across sites a
  * different file with the same number of chapters is the same fic, not an
  * edit, so it's a duplicate (no churn between differently formatted copies).
+ * One exception (2026-11-23, Allie): an AO3 copy with the same count as a
+ * FanFiction.net work is an update, so the fic takes AO3's identity (tags,
+ * series, summary, work link) instead of being turned away. Once it has,
+ * the reverse upload (FanFiction.net onto AO3) is still a duplicate, so the
+ * two never flip back and forth.
  */
 function findTwin(
 	db: ReturnType<typeof getDb>,
@@ -246,7 +251,9 @@ function findTwin(
 			? 'update'
 			: incomingChapters < row.chapter_count
 				? 'stale'
-				: 'duplicate';
+				: twin.site === 'ao3'
+					? 'update'
+					: 'duplicate';
 	return { kind, row, twin: true };
 }
 
@@ -421,7 +428,8 @@ async function ingestEpubOnce(buffer: Buffer, sourceLabel: string): Promise<Inge
 	// AO3 work keeps its title/author/summary, source + source_url, tags,
 	// series, author rows, cover, skin and its preface/summary/end-notes
 	// pages (FanFiction.net has none of that richness). An AO3 copy
-	// arriving ahead of a non-AO3 one is a normal full update instead, plus
+	// arriving ahead of (or level with) a non-AO3 one is a normal full
+	// update instead, plus
 	// the AO3 source_url so later AO3 downloads match by URL.
 	const twinUpdate = match?.twin === true && match.kind === 'update';
 	const keepIdentity = twinUpdate && incomingSite !== 'ao3';
