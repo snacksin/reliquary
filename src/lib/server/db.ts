@@ -5,7 +5,7 @@ import { backfillIdentity } from './identity';
 import { purgeExpired } from './purge';
 import { purgeExpiredSessions } from './session';
 import { backfillSeries } from './series';
-import { backfillSource, backfillSourceUrl } from './source';
+import { backfillSource, backfillSourceUrl, backfillWebnovelSourceUrl } from './source';
 import { backfillDecodeText, backfillFixHeadings } from './textdecode';
 import { backfillAuthorIdentity } from './authors';
 import { backfillClearFichubSkins, backfillStripCalibreSkins } from './skincleanup';
@@ -104,6 +104,15 @@ export function getDb(): Database.Database {
 		backfillSourceUrl(db);
 	} catch (e) {
 		console.error('[source-url-backfill] failed', e);
+	}
+
+	// Webnovel links (2026-11-27): give Webnovel books imported before ingest
+	// read WebToEpub's layout their book URL, so re-downloads update in place.
+	// Runs after backfillSource. Guarded — a failure here can never block boot.
+	try {
+		backfillWebnovelSourceUrl(db);
+	} catch (e) {
+		console.error('[webnovel-backfill] failed', e);
 	}
 
 	// Decode HTML entities in already-stored works.title/author (+ re-key the

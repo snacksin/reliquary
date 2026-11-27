@@ -124,7 +124,7 @@ export type Work = {
 	has_skin?: boolean;
 	/**
 	 * WS Part 3: the Multi-Source classification ('ao3', 'fichub-ao3',
-	 * 'fichub-ffn', 'fichub-other', 'unknown'). Detail feed only — gates the
+	 * 'fichub-ffn', 'fichub-other', 'webnovel', 'unknown'). Detail feed only — gates the
 	 * detail page's "Creator's style" paste box to AO3-source works.
 	 */
 	source?: string | null;
@@ -776,6 +776,7 @@ export type LinkedAlias = {
 export function aliasSiteLabel(source: string | null): string {
 	if (source === 'fichub-ffn') return 'FanFiction.net';
 	if (source === 'fichub-other') return 'FicHub';
+	if (source === 'webnovel') return 'Webnovel';
 	return 'another site';
 }
 
