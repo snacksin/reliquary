@@ -420,11 +420,17 @@ export function isWebToEpubInfoPage(html: string): boolean {
 	return /<h1>\s*Information\s*<\/h1>[\s\S]{0,300}?Table of Contents URL:/i.test(html ?? '');
 }
 
-/** The book URL from a WebToEpub Information page, as written there. */
+/**
+ * The book URL from a WebToEpub Information page. Older versions (1.0.9)
+ * write it as plain text after the label; newer ones (1.0.15) wrap it in
+ * `<a class="webToEpub-table-of-content-url" href="…">`.
+ */
 function webToEpubTocUrl(html: string): string | null {
 	if (!isWebToEpubInfoPage(html)) return null;
-	const m = html.match(/Table of Contents URL:\s*(?:<\/b>)?\s*(https?:\/\/[^\s<"]+)/i);
-	return m ? m[1] : null;
+	const m = html.match(
+		/Table of Contents URL:\s*(?:<\/b>)?\s*(?:<a\b[^>]*\bhref="([^"]+)"[^>]*>)?\s*(https?:\/\/[^\s<"]+)?/i
+	);
+	return m?.[1] ?? m?.[2] ?? null;
 }
 
 /**

@@ -100,12 +100,15 @@ export function backfillSourceUrl(db: Database): void {
  * `source = 'webnovel'` + the canonical book URL so a later WebToEpub download
  * of the same book matches by URL and updates in place (re-uploading the
  * same file re-files the Information page as the preface). Writes only those
- * two columns — invisible to Continue Reading. Rows it can't place stay
+ * two columns — invisible to Continue Reading. Trashed rows are left alone
+ * (a trashed copy must not claim the link). Rows it can't place stay
  * `unknown`; a clean second boot scans only the leftover `unknown` rows.
  */
 export function backfillWebnovelSourceUrl(db: Database): void {
 	const works = db
-		.prepare(`SELECT id FROM works WHERE source = 'unknown' AND source_url IS NULL`)
+		.prepare(
+			`SELECT id FROM works WHERE source = 'unknown' AND source_url IS NULL AND trashed_at IS NULL`
+		)
 		.all() as { id: string }[];
 	if (works.length === 0) {
 		console.log('[webnovel-backfill] 0 works');
