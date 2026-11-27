@@ -401,7 +401,58 @@ export function extractCanonicalAo3Url(prefaceHtml: string): string | null {
 }
 
 /** Where an imported EPUB came from (Multi-Source Step 1). */
-export type WorkSource = 'ao3' | 'fichub-ao3' | 'fichub-ffn' | 'fichub-other' | 'unknown';
+export type WorkSource =
+	| 'ao3'
+	| 'fichub-ao3'
+	| 'fichub-ffn'
+	| 'fichub-other'
+	| 'webnovel'
+	| 'unknown';
+
+/**
+ * The "Information" page WebToEpub (the dteviot browser add-on) puts first in
+ * every EPUB it builds: `<h1>Information</h1>` then a
+ * `<b>Table of Contents URL: </b>https://…` line, then the site's own
+ * book-details block (title, stats, synopsis). It's the book's metadata page,
+ * so it is the preface, never chapter 1.
+ */
+export function isWebToEpubInfoPage(html: string): boolean {
+	return /<h1>\s*Information\s*<\/h1>[\s\S]{0,300}?Table of Contents URL:/i.test(html ?? '');
+}
+
+/**
+ * The book URL from a WebToEpub Information page. Older versions (1.0.9)
+ * write it as plain text after the label; newer ones (1.0.15) wrap it in
+ * `<a class="webToEpub-table-of-content-url" href="…">`.
+ */
+function webToEpubTocUrl(html: string): string | null {
+	if (!isWebToEpubInfoPage(html)) return null;
+	const m = html.match(
+		/Table of Contents URL:\s*(?:<\/b>)?\s*(?:<a\b[^>]*\bhref="([^"]+)"[^>]*>)?\s*(https?:\/\/[^\s<"]+)?/i
+	);
+	return m?.[1] ?? m?.[2] ?? null;
+}
+
+/**
+ * The synopsis from a WebToEpub Information page of a Webnovel book — the
+ * `j_synopsis` block of the copied webnovel.com details — as summary `<p>`s
+ * (blank-line breaks become paragraphs; every tag but `<br>` is dropped).
+ * Null when there's no synopsis block.
+ */
+export function extractWebToEpubSynopsis(html: string): string | null {
+	if (!isWebToEpubInfoPage(html)) return null;
+	const block = html.match(/class="[^"]*\bj_synopsis\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+	if (!block) return null;
+	const text = block[1]
+		.replace(/<(?!br\b)[^>]*>/gi, '')
+		.replace(/<br\s*\/?>/gi, '<br>')
+		.trim();
+	const paras = text
+		.split(/(?:\s*<br>\s*){2,}/)
+		.map((p) => p.replace(/^(?:\s*<br>)+|(?:<br>\s*)+$/g, '').trim())
+		.filter(Boolean);
+	return paras.length ? paras.map((p) => `<p>${p}</p>`).join('\n') : null;
+}
 
 /**
  * Detect a work's source from its preface HTML (MS Step 1). Pure parsing, no
@@ -434,6 +485,7 @@ export function detectSource(prefaceHtml: string): WorkSource {
 		return 'fichub-other';
 	}
 	if (extractCanonicalAo3Url(prefaceHtml) !== null) return 'ao3';
+	if (/webnovel\.com\/book\//i.test(webToEpubTocUrl(prefaceHtml) ?? '')) return 'webnovel';
 	return 'unknown';
 }
 
@@ -450,6 +502,10 @@ function normalizeSourceUrl(href: string): string | null {
 	if (m) return `https://archiveofourown.org/works/${m[1]}`;
 	m = href.match(/fanfiction\.net\/s\/(\d+)/i); // /s/<id>/<chapter>/<slug> → /s/<id>
 	if (m) return `https://www.fanfiction.net/s/${m[1]}`;
+	// /book/<slug>_<id> or /book/<id> → /book/<id> (the slug carries the
+	// title, which the translator can rename; the numeric id never changes).
+	m = href.match(/webnovel\.com\/book\/(?:[^/?#\s<"]*_)?(\d{6,})/i);
+	if (m) return `https://www.webnovel.com/book/${m[1]}`;
 	return null;
 }
 
@@ -467,7 +523,10 @@ export function extractSourceUrl(prefaceHtml: string): string | null {
 	const ao3 = extractCanonicalAo3Url(prefaceHtml);
 	if (ao3) return ao3;
 	const m = prefaceHtml.match(/Original source:[\s\S]{0,80}?<a\b[^>]*\bhref="([^"]+)"/i);
-	return m ? normalizeSourceUrl(m[1]) : null;
+	if (m) return normalizeSourceUrl(m[1]);
+	// WebToEpub's Information page (Webnovel books are the recognized site).
+	const toc = webToEpubTocUrl(prefaceHtml);
+	return toc ? normalizeSourceUrl(toc) : null;
 }
 
 /** One series membership parsed from a preface "Series:" entry. */
@@ -870,7 +929,7 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 
 		const title = book.metadata.title?.trim() || 'Untitled';
 		const author = book.metadata.creator?.trim() || 'Unknown';
-		const summary = book.metadata.description?.trim() || null;
+		let summary = book.metadata.description?.trim() || null;
 
 		// Narrow view of each spine item that this module reads. epub2's
 		// TocElement isn't re-exported, so we type the fields we use directly.
@@ -933,10 +992,23 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 			(h) => h !== null && /Exported with the assistance of[\s\S]{0,80}FicHub/i.test(h)
 		);
 
+		// WebToEpub (browser add-on, how Webnovel books get downloaded): cover
+		// page, then its "Information" page, then one item per chapter. Its
+		// layout is fixed, so it's classified outright instead of by position —
+		// the position fallback made the Information page chapter 1 and the
+		// real last chapter the afterword. The cover page is dropped (the cover
+		// image comes from the OPF `<meta name="cover">`, as for every fic).
+		// Only files carrying the Information page take this path.
+		const webToEpubInfo = htmls.findIndex((h) => h !== null && isWebToEpubInfoPage(h));
+
 		// Pass 2: resolve nulls — content heuristic for FicHub (fallback to
 		// position when inconclusive), plain position fallback otherwise.
 		// `'skip'` (MS Step 4 Part A) drops a FicHub nav/TOC page entirely.
 		const kinds: (ChapterKind | 'skip')[] = flow.map((_: SpineItem, i: number) => {
+			if (webToEpubInfo >= 0) {
+				if (i < webToEpubInfo) return 'skip';
+				return i === webToEpubInfo ? 'preface' : 'chapter';
+			}
 			if (provisional[i]) return provisional[i] as ChapterKind;
 			if (isFicHub && htmls[i] !== null) {
 				const byContent = classifyByContent(htmls[i] as string);
@@ -1054,6 +1126,9 @@ export async function parseEpub(buffer: Buffer, workId: string): Promise<ParsedE
 		// there's no preface or the dl is missing, tags stays [].
 		const prefaceChapter = chapters.find((c) => c.kind === 'preface');
 		const tags = prefaceChapter ? extractPrefaceTags(prefaceChapter.html) : [];
+		// WebToEpub files carry no OPF description; the synopsis is on the
+		// Information page (the preface).
+		if (!summary && prefaceChapter) summary = extractWebToEpubSynopsis(prefaceChapter.html);
 
 		// Image extraction. listImage() returns image manifest entries;
 		// getImageAsync(id) returns [Buffer, mediaType]. We collapse
